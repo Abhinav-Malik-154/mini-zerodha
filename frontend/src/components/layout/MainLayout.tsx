@@ -1,5 +1,6 @@
 'use client';
-
+import ConnectButton from '@/components/wallet/ConnectButton';
+// import ConnectButton from '@/components/wallet/ConnectButton';
 import { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
@@ -190,15 +191,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
             <Bars3Icon className="h-6 w-6" aria-hidden="true" />
           </button>
 
-          <div className="flex flex-1 justify-end gap-x-4 self-stretch lg:gap-x-6">
-            <div className="flex items-center gap-x-4 lg:gap-x-6">
-              <button className="rounded-xl bg-gradient-to-r from-blue-500 to-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105">
-                Connect Wallet
-              </button>
-            </div>
-          </div>
-        </div>
-
+          <div className="flex items-center gap-x-4 lg:gap-x-6">
+  <ConnectButton />
+</div>
+          
+</div>
         <main className="py-10">
           <div className="px-4 sm:px-6 lg:px-8">
             <AnimatePresence mode="wait">

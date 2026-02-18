@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface Order {
   price: number;
@@ -10,24 +11,33 @@ interface Order {
 }
 
 export default function OrderBook() {
-  const [bids] = useState<Order[]>([
-    { price: 51234, amount: 0.12, total: 6148.08 },
-    { price: 51233, amount: 0.34, total: 17419.22 },
-    { price: 51232, amount: 0.23, total: 11783.36 },
-    { price: 51231, amount: 0.45, total: 23053.95 },
-    { price: 51230, amount: 0.67, total: 34324.10 },
-  ]);
+  const { orderBooks, subscribeToSymbol } = useWebSocket();
+  const [symbol, setSymbol] = useState('BTC/USD');
 
-  const [asks] = useState<Order[]>([
-    { price: 51235, amount: 0.23, total: 11784.05 },
-    { price: 51236, amount: 0.45, total: 23056.20 },
-    { price: 51237, amount: 0.34, total: 17420.58 },
-    { price: 51238, amount: 0.56, total: 28693.28 },
-    { price: 51239, amount: 0.78, total: 39966.42 },
-  ]);
+  useEffect(() => {
+    subscribeToSymbol(symbol);
+  }, [symbol, subscribeToSymbol]);
 
-  const spread = asks[0].price - bids[0].price;
-  const spreadPercentage = (spread / bids[0].price) * 100;
+  const orderBook = orderBooks[symbol] || {
+    bids: [],
+    asks: [],
+    spread: 0,
+    timestamp: Date.now()
+  };
+
+  // Calculate totals
+  const bidsWithTotal = orderBook.bids.map(bid => ({
+    ...bid,
+    total: bid.price * bid.amount
+  }));
+
+  const asksWithTotal = orderBook.asks.map(ask => ({
+    ...ask,
+    total: ask.price * ask.amount
+  }));
+
+  const maxBidTotal = Math.max(...bidsWithTotal.map(b => b.total), 1);
+  const maxAskTotal = Math.max(...asksWithTotal.map(a => a.total), 1);
 
   return (
     <motion.div
@@ -35,26 +45,41 @@ export default function OrderBook() {
       animate={{ opacity: 1, x: 0 }}
       className="bg-slate-800/30 backdrop-blur-xl rounded-2xl p-6 ring-1 ring-white/10"
     >
-      <h2 className="text-xl font-semibold text-white mb-4">Order Book</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold text-white">Order Book</h2>
+        <select 
+          value={symbol}
+          onChange={(e) => setSymbol(e.target.value)}
+          className="bg-slate-700/50 text-white rounded-lg px-3 py-1 text-sm"
+        >
+          <option value="BTC/USD">BTC/USD</option>
+          <option value="ETH/USD">ETH/USD</option>
+          <option value="SOL/USD">SOL/USD</option>
+        </select>
+      </div>
       
       {/* Asks (Sell orders) */}
       <div className="mb-4">
         <div className="text-xs text-slate-400 grid grid-cols-3 mb-2 px-2">
           <span>Price (USD)</span>
-          <span className="text-right">Amount (BTC)</span>
+          <span className="text-right">Amount</span>
           <span className="text-right">Total (USD)</span>
         </div>
-        {asks.map((ask, idx) => (
+        {asksWithTotal.map((ask, idx) => (
           <motion.div
             key={idx}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: idx * 0.05 }}
-            className="grid grid-cols-3 text-sm py-1 px-2 hover:bg-red-500/10 rounded group"
+            transition={{ delay: idx * 0.02 }}
+            className="relative grid grid-cols-3 text-sm py-1 px-2 hover:bg-red-500/10 rounded group"
           >
-            <span className="text-red-400 font-mono">${ask.price.toLocaleString()}</span>
-            <span className="text-right text-slate-300">{ask.amount.toFixed(3)}</span>
-            <span className="text-right text-slate-400">${ask.total.toLocaleString()}</span>
+            <div 
+              className="absolute right-0 top-0 bottom-0 bg-red-500/10 rounded"
+              style={{ width: `${(ask.total / maxAskTotal) * 100}%` }}
+            />
+            <span className="text-red-400 font-mono relative z-10">${ask.price.toLocaleString()}</span>
+            <span className="text-right text-slate-300 relative z-10">{ask.amount.toFixed(3)}</span>
+            <span className="text-right text-slate-400 relative z-10">${ask.total.toLocaleString()}</span>
           </motion.div>
         ))}
       </div>
@@ -63,25 +88,36 @@ export default function OrderBook() {
       <div className="border-y border-white/10 py-3 my-3">
         <div className="flex justify-between text-sm">
           <span className="text-slate-400">Spread</span>
-          <span className="text-white font-mono">${spread.toFixed(2)} ({spreadPercentage.toFixed(2)}%)</span>
+          <span className="text-white font-mono">
+            ${orderBook.spread.toFixed(2)} ({(orderBook.spread / (asksWithTotal[0]?.price || 1) * 100).toFixed(2)}%)
+          </span>
         </div>
       </div>
 
       {/* Bids (Buy orders) */}
       <div>
-        {bids.map((bid, idx) => (
+        {bidsWithTotal.map((bid, idx) => (
           <motion.div
             key={idx}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: idx * 0.05 }}
-            className="grid grid-cols-3 text-sm py-1 px-2 hover:bg-green-500/10 rounded group"
+            transition={{ delay: idx * 0.02 }}
+            className="relative grid grid-cols-3 text-sm py-1 px-2 hover:bg-green-500/10 rounded group"
           >
-            <span className="text-green-400 font-mono">${bid.price.toLocaleString()}</span>
-            <span className="text-right text-slate-300">{bid.amount.toFixed(3)}</span>
-            <span className="text-right text-slate-400">${bid.total.toLocaleString()}</span>
+            <div 
+              className="absolute right-0 top-0 bottom-0 bg-green-500/10 rounded"
+              style={{ width: `${(bid.total / maxBidTotal) * 100}%` }}
+            />
+            <span className="text-green-400 font-mono relative z-10">${bid.price.toLocaleString()}</span>
+            <span className="text-right text-slate-300 relative z-10">{bid.amount.toFixed(3)}</span>
+            <span className="text-right text-slate-400 relative z-10">${bid.total.toLocaleString()}</span>
           </motion.div>
         ))}
+      </div>
+
+      {/* Last updated */}
+      <div className="mt-4 text-xs text-slate-400 text-right">
+        Updated: {new Date(orderBook.timestamp).toLocaleTimeString()}
       </div>
     </motion.div>
   );

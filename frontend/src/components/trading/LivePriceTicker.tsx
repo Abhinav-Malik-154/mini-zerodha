@@ -32,7 +32,8 @@ export default function LivePriceTicker() {
       <div className="grid grid-cols-3 gap-4">
         {symbols.map(symbol => {
           const priceData = prices[symbol];
-          const isPositive = priceData ? parseFloat(priceData.change24h) >= 0 : true;
+          // const isPositive = priceData ? parseFloat(priceData.change24h.toString() >= 0 : true;
+          const isPositive = priceData ? parseFloat(priceData.change24h.toString()) >= 0 : true;
 
           return (
             <motion.div
@@ -47,7 +48,7 @@ export default function LivePriceTicker() {
                   <span className={`text-xs flex items-center ${
                     isPositive ? 'text-green-400' : 'text-red-400'
                   }`}>
-                    {isPositive ? '▲' : '▼'} {Math.abs(parseFloat(priceData.change24h))}%
+                    {isPositive ? '▲' : '▼'} {Math.abs(parseFloat(priceData.change24h.toString()))}%
                   </span>
                 )}
               </div>

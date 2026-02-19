@@ -2,42 +2,129 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface Order {
   price: number;
   amount: number;
-  total: number;
+  total?: number;
+}
+
+interface OrderBookData {
+  bids: Order[];
+  asks: Order[];
+  spread: number;
+  timestamp: number;
 }
 
 export default function OrderBook() {
-  const { orderBooks, subscribeToSymbol } = useWebSocket();
+  const [orderBooks, setOrderBooks] = useState<Record<string, OrderBookData>>({});
   const [symbol, setSymbol] = useState('BTC/USD');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    subscribeToSymbol(symbol);
-  }, [symbol, subscribeToSymbol]);
+    // Initialize with mock data
+    const generateMockOrderBook = (basePrice: number): OrderBookData => {
+      const bids: Order[] = [];
+      const asks: Order[] = [];
 
-  const orderBook = orderBooks[symbol] || {
+      for (let i = 0; i < 10; i++) {
+        bids.push({
+          price: Number((basePrice - (i * 10) - (Math.random() * 5)).toFixed(2)),
+          amount: Number((Math.random() * 2 + 0.1).toFixed(3))
+        });
+      }
+
+      for (let i = 0; i < 10; i++) {
+        asks.push({
+          price: Number((basePrice + (i * 10) + (Math.random() * 5)).toFixed(2)),
+          amount: Number((Math.random() * 2 + 0.1).toFixed(3))
+        });
+      }
+
+      bids.sort((a, b) => b.price - a.price);
+      asks.sort((a, b) => a.price - a.price);
+
+      return {
+        bids,
+        asks,
+        spread: asks[0]?.price - bids[0]?.price || 0,
+        timestamp: Date.now()
+      };
+    };
+
+    const mockData: Record<string, OrderBookData> = {
+      'BTC/USD': generateMockOrderBook(66569.43),
+      'ETH/USD': generateMockOrderBook(1927.08),
+      'SOL/USD': generateMockOrderBook(80.92)
+    };
+
+    setOrderBooks(mockData);
+    setIsLoading(false);
+
+    // Simulate real-time updates
+    const interval = setInterval(() => {
+      setOrderBooks(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(key => {
+          if (updated[key]) {
+            const newBids = updated[key].bids.map(bid => ({
+              ...bid,
+              amount: Number((bid.amount + (Math.random() - 0.5) * 0.1).toFixed(3))
+            }));
+            const newAsks = updated[key].asks.map(ask => ({
+              ...ask,
+              amount: Number((ask.amount + (Math.random() - 0.5) * 0.1).toFixed(3))
+            }));
+            
+            updated[key] = {
+              ...updated[key],
+              bids: newBids,
+              asks: newAsks,
+              timestamp: Date.now()
+            };
+          }
+        });
+        return updated;
+      });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Safely get current order book with fallback
+  const currentOrderBook = orderBooks?.[symbol] || {
     bids: [],
     asks: [],
     spread: 0,
     timestamp: Date.now()
   };
 
-  // Calculate totals
-  const bidsWithTotal = orderBook.bids.map(bid => ({
+  // Calculate totals for each order
+  const bidsWithTotal = currentOrderBook.bids.map(bid => ({
     ...bid,
     total: bid.price * bid.amount
   }));
 
-  const asksWithTotal = orderBook.asks.map(ask => ({
+  const asksWithTotal = currentOrderBook.asks.map(ask => ({
     ...ask,
     total: ask.price * ask.amount
   }));
 
   const maxBidTotal = Math.max(...bidsWithTotal.map(b => b.total), 1);
   const maxAskTotal = Math.max(...asksWithTotal.map(a => a.total), 1);
+
+  if (isLoading) {
+    return (
+      <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl p-6 ring-1 ring-white/10">
+        <div className="h-8 bg-slate-700/20 rounded w-32 mb-4 animate-pulse"></div>
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-6 bg-slate-700/20 rounded animate-pulse"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -50,7 +137,7 @@ export default function OrderBook() {
         <select 
           value={symbol}
           onChange={(e) => setSymbol(e.target.value)}
-          className="bg-slate-700/50 text-white rounded-lg px-3 py-1 text-sm"
+          className="bg-slate-700/50 text-white rounded-lg px-3 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
         >
           <option value="BTC/USD">BTC/USD</option>
           <option value="ETH/USD">ETH/USD</option>
@@ -89,7 +176,7 @@ export default function OrderBook() {
         <div className="flex justify-between text-sm">
           <span className="text-slate-400">Spread</span>
           <span className="text-white font-mono">
-            ${orderBook.spread.toFixed(2)} ({(orderBook.spread / (asksWithTotal[0]?.price || 1) * 100).toFixed(2)}%)
+            ${currentOrderBook.spread.toFixed(2)} ({((currentOrderBook.spread / (asksWithTotal[0]?.price || 1)) * 100).toFixed(2)}%)
           </span>
         </div>
       </div>
@@ -117,7 +204,7 @@ export default function OrderBook() {
 
       {/* Last updated */}
       <div className="mt-4 text-xs text-slate-400 text-right">
-        Updated: {new Date(orderBook.timestamp).toLocaleTimeString()}
+        Updated: {new Date(currentOrderBook.timestamp).toLocaleTimeString()}
       </div>
     </motion.div>
   );

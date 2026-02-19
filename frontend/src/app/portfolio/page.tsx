@@ -1,117 +1,359 @@
 'use client';
 
-import { motion } from 'framer-motion';
-import { useState } from 'react';
-import { 
-  ChartBarIcon, 
-  CurrencyDollarIcon, 
-  ArrowTrendingUpIcon 
-} from '@heroicons/react/24/outline';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  TrendingUp, TrendingDown, Wallet, PieChart,
+  ArrowUpRight, ArrowDownRight, Eye, EyeOff,
+  Calendar, Clock, RefreshCw, AlertCircle,
+  DollarSign, Globe, BarChart3, Download,
+  ChevronDown, ChevronRight, Star, Copy
+} from 'lucide-react';
+import { useRealTimeData } from '@/hooks/useRealTimeData';
+import VerificationBadge from '@/components/ui/VerificationBadge';
+
+interface Holding {
+  id: string;
+  symbol: string;
+  name: string;
+  icon: string;
+  balance: number;
+  avgBuyPrice: number;
+  currentPrice: number;
+  value: number;
+  pnl: number;
+  pnlPercentage: number;
+  allocation: number;
+}
+
+interface Transaction {
+  id: string;
+  type: 'BUY' | 'SELL';
+  symbol: string;
+  amount: number;
+  price: number;
+  value: number;
+  timestamp: string;
+  status: 'completed' | 'pending';
+  txHash: string;
+}
 
 export default function PortfolioPage() {
-  const [portfolio] = useState({
-    totalValue: 45234.67,
-    todayChange: 1234.56,
-    todayChangePercent: 2.78,
-    holdings: [
-      { asset: 'BTC', amount: 0.45, price: 51234, value: 23055.30, change24h: 2.34 },
-      { asset: 'ETH', amount: 5.2, price: 3123, value: 16239.60, change24h: -1.23 },
-      { asset: 'SOL', amount: 45, price: 102, value: 4590.00, change24h: 5.67 },
-      { asset: 'USDT', amount: 1349.77, price: 1, value: 1349.77, change24h: 0.01 },
-    ]
-  });
+  const { prices, recentTrades, isConnected } = useRealTimeData();
+  const [hideBalances, setHideBalances] = useState(false);
+  const [timeframe, setTimeframe] = useState<'1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL'>('1M');
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Mock holdings data - in real app, this would come from your backend
+  const [holdings, setHoldings] = useState<Holding[]>([
+    { id: 'btc', symbol: 'BTC', name: 'Bitcoin', icon: '₿', balance: 0.45, avgBuyPrice: 48500, currentPrice: 51234.56, value: 23055.55, pnl: 1230.55, pnlPercentage: 5.64, allocation: 45 },
+    { id: 'eth', symbol: 'ETH', name: 'Ethereum', icon: 'Ξ', balance: 5.2, avgBuyPrice: 2950, currentPrice: 3123.45, value: 16241.94, pnl: 901.94, pnlPercentage: 5.88, allocation: 31 },
+    { id: 'sol', symbol: 'SOL', name: 'Solana', icon: '◎', balance: 45, avgBuyPrice: 95.50, currentPrice: 102.34, value: 4605.30, pnl: 307.80, pnlPercentage: 7.16, allocation: 12 },
+    { id: 'usdc', symbol: 'USDC', name: 'USD Coin', icon: '$', balance: 12500, avgBuyPrice: 1.00, currentPrice: 1.00, value: 12500, pnl: 0, pnlPercentage: 0, allocation: 12 },
+  ]);
+
+  const [transactions, setTransactions] = useState<Transaction[]>([
+    { id: '1', type: 'BUY', symbol: 'BTC', amount: 0.15, price: 49800, value: 7470, timestamp: '2026-02-19T10:30:00Z', status: 'completed', txHash: '0x7a4b...8f3e' },
+    { id: '2', type: 'BUY', symbol: 'ETH', amount: 1.5, price: 3050, value: 4575, timestamp: '2026-02-19T08:15:00Z', status: 'completed', txHash: '0x3c9d...2e1f' },
+    { id: '3', type: 'SELL', symbol: 'SOL', amount: 10, price: 98.50, value: 985, timestamp: '2026-02-18T22:45:00Z', status: 'completed', txHash: '0x8b2a...4d7c' },
+  ]);
+
+  // Update holdings with real-time prices
+  useEffect(() => {
+    setHoldings(prev => prev.map(holding => {
+      const priceData = prices[`${holding.symbol}/USD`];
+      if (priceData) {
+        const currentPrice = priceData.price;
+        const value = holding.balance * currentPrice;
+        const pnl = value - (holding.balance * holding.avgBuyPrice);
+        const pnlPercentage = ((currentPrice - holding.avgBuyPrice) / holding.avgBuyPrice) * 100;
+        
+        return {
+          ...holding,
+          currentPrice,
+          value,
+          pnl,
+          pnlPercentage,
+        };
+      }
+      return holding;
+    }));
+    setIsLoading(false);
+  }, [prices]);
+
+  // Add real-time transactions
+  useEffect(() => {
+    if (recentTrades.length > 0) {
+      const newTx = recentTrades[0];
+      if (newTx && !transactions.find(t => t.txHash === newTx.tradeHash)) {
+        const transaction: Transaction = {
+          id: Date.now().toString(),
+          type: newTx.side as 'BUY' | 'SELL',
+          symbol: newTx.symbol.split('/')[0],
+          amount: newTx.amount,
+          price: newTx.price,
+          value: newTx.amount * newTx.price,
+          timestamp: new Date().toISOString(),
+          status: 'completed',
+          txHash: newTx.tradeHash || '0x' + Math.random().toString(16).substring(2, 10),
+        };
+        setTransactions(prev => [transaction, ...prev].slice(0, 10));
+      }
+    }
+  }, [recentTrades]);
+
+  const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
+  const totalPnl = holdings.reduce((sum, h) => sum + h.pnl, 0);
+  const totalPnlPercentage = (totalPnl / (totalValue - totalPnl)) * 100;
+
+  const chartData = [40, 65, 45, 70, 55, 80, 65, 90, 75, 85, 70, 95];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
+          <p className="text-slate-400">Loading portfolio...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Portfolio Summary */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="grid grid-cols-1 md:grid-cols-3 gap-6"
-      >
-        <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl p-6 ring-1 ring-white/10 col-span-2">
-          <p className="text-sm text-slate-400">Total Portfolio Value</p>
-          <p className="text-3xl font-bold text-white mt-2">${portfolio.totalValue.toLocaleString()}</p>
-          <p className="text-sm text-emerald-400 mt-1">
-            ▲ ${portfolio.todayChange.toLocaleString()} ({portfolio.todayChangePercent}%)
-          </p>
-        </div>
-        
-        <div className="bg-slate-800/30 backdrop-blur-xl rounded-2xl p-6 ring-1 ring-white/10">
-          <p className="text-sm text-slate-400">Today's P&L</p>
-          <p className="text-2xl font-bold text-emerald-400 mt-2">+${portfolio.todayChange.toLocaleString()}</p>
-          <p className="text-sm text-slate-400 mt-1">Updated just now</p>
-        </div>
-      </motion.div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div>
+            <h1 className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Portfolio Overview
+            </h1>
+            <p className="text-slate-400 mt-1 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Last updated {new Date().toLocaleTimeString()}
+              {isConnected && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse ml-2" />}
+            </p>
+          </div>
 
-      {/* Holdings Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="bg-slate-800/30 backdrop-blur-xl rounded-2xl p-6 ring-1 ring-white/10"
-      >
-        <h2 className="text-xl font-semibold text-white mb-4">Your Holdings</h2>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-sm text-slate-400 border-b border-white/10">
-                <th className="pb-3">Asset</th>
-                <th className="pb-3">Holdings</th>
-                <th className="pb-3">Price</th>
-                <th className="pb-3">Value</th>
-                <th className="pb-3">24h Change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {portfolio.holdings.map((holding, idx) => (
-                <motion.tr
-                  key={holding.asset}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.05 }}
-                  className="border-b border-white/5 last:border-0"
-                >
-                  <td className="py-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 flex items-center justify-center">
-                        <span className="text-xs font-bold text-white">{holding.asset}</span>
-                      </div>
-                      <span className="text-white font-semibold">{holding.asset}/USD</span>
-                    </div>
-                  </td>
-                  <td className="py-4 text-white">{holding.amount}</td>
-                  <td className="py-4 text-white">${holding.price.toLocaleString()}</td>
-                  <td className="py-4 text-white">${holding.value.toLocaleString()}</td>
-                  <td className="py-4">
-                    <span className={`px-2 py-1 rounded text-sm ${
-                      holding.change24h >= 0 
-                        ? 'bg-green-500/20 text-green-400' 
-                        : 'bg-red-500/20 text-red-400'
-                    }`}>
-                      {holding.change24h >= 0 ? '+' : ''}{holding.change24h}%
-                    </span>
-                  </td>
-                </motion.tr>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setHideBalances(!hideBalances)}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all group"
+            >
+              {hideBalances ? 
+                <EyeOff className="w-5 h-5 text-slate-400 group-hover:text-white" /> : 
+                <Eye className="w-5 h-5 text-slate-400 group-hover:text-white" />
+              }
+            </button>
+            <button className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all group">
+              <RefreshCw className={`w-5 h-5 text-slate-400 group-hover:text-white ${!isConnected ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* Portfolio Value Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
+          {/* Total Value Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="lg:col-span-2 bg-gradient-to-br from-blue-600/20 via-purple-600/20 to-pink-600/20 backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-400 uppercase tracking-wider">Total Portfolio Value</p>
+                <div className="mt-2 flex items-baseline gap-3">
+                  <span className="text-4xl lg:text-5xl font-bold text-white">
+                    {hideBalances ? '••••••' : `$${totalValue.toLocaleString()}`}
+                  </span>
+                  <span className={`flex items-center gap-1 text-sm font-medium px-2 py-1 rounded-full ${
+                    totalPnl >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {totalPnl >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    {totalPnl >= 0 ? '+' : ''}{totalPnlPercentage.toFixed(2)}%
+                  </span>
+                </div>
+                <p className={`text-sm mt-2 ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {totalPnl >= 0 ? '+' : '-'}${Math.abs(totalPnl).toLocaleString()} (24h)
+                </p>
+              </div>
+              <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
+                <Wallet className="w-6 h-6 text-blue-400" />
+              </div>
+            </div>
+
+            {/* Mini Chart */}
+            <div className="mt-6 h-16 flex items-end gap-1">
+              {chartData.map((height, i) => (
+                <div
+                  key={i}
+                  className="flex-1 bg-gradient-to-t from-blue-500/50 to-purple-500/50 rounded-t-lg hover:from-blue-500 hover:to-purple-500 transition-all duration-300 cursor-pointer"
+                  style={{ height: `${height}%` }}
+                />
               ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
+            </div>
+          </motion.div>
 
-      {/* Performance Chart Placeholder */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="bg-slate-800/30 backdrop-blur-xl rounded-2xl p-6 ring-1 ring-white/10"
-      >
-        <h2 className="text-xl font-semibold text-white mb-4">Portfolio Performance</h2>
-        <div className="h-64 flex items-center justify-center border-2 border-dashed border-white/10 rounded-xl">
-          <p className="text-slate-400">Chart coming soon...</p>
+          {/* Quick Stats Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white/5 backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl"
+          >
+            <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider mb-4">Quick Stats</h3>
+            <div className="space-y-4">
+              {[
+                { label: 'Assets', value: holdings.length.toString() },
+                { label: 'Best Performer', value: 'SOL +7.16%', trend: 'up' },
+                { label: 'Worst Performer', value: 'BTC +5.64%', trend: 'up' },
+                { label: 'Total Trades', value: '234' },
+              ].map((stat, i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <span className="text-sm text-slate-400">{stat.label}</span>
+                  <span className={`text-sm font-medium ${
+                    stat.trend === 'up' ? 'text-green-400' : 
+                    stat.trend === 'down' ? 'text-red-400' : 'text-white'
+                  }`}>
+                    {stat.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
         </div>
-      </motion.div>
+
+        {/* Timeframe Selector */}
+        <div className="flex items-center justify-between mt-8">
+          <div className="flex gap-1 bg-white/5 rounded-2xl p-1 border border-white/10">
+            {['1D', '1W', '1M', '3M', '1Y', 'ALL'].map((tf) => (
+              <button
+                key={tf}
+                onClick={() => setTimeframe(tf as any)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  timeframe === tf
+                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Holdings Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 mt-6">
+          {holdings.map((holding, idx) => (
+            <motion.div
+              key={holding.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="group bg-white/5 hover:bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/10 hover:border-blue-500/50 transition-all duration-300 cursor-pointer"
+              onClick={() => setSelectedAsset(holding.id)}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xl font-bold text-white shadow-lg">
+                    {holding.icon}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">{holding.symbol}</h3>
+                    <p className="text-sm text-slate-400">{holding.name}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold text-white">
+                    {hideBalances ? '••••••' : holding.balance.toLocaleString()}
+                  </span>
+                  <span className="text-sm text-slate-400">≈ ${holding.value.toLocaleString()}</span>
+                </div>
+
+                <div className="flex items-center gap-3 mt-2">
+                  <span className={`text-sm font-medium flex items-center gap-1 ${
+                    holding.pnl >= 0 ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    {holding.pnl >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                    {holding.pnlPercentage.toFixed(2)}%
+                  </span>
+                  <span className="text-xs text-slate-400">24h</span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-slate-400">Allocation</span>
+                    <span className="text-white font-medium">{holding.allocation}%</span>
+                  </div>
+                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+                      style={{ width: `${holding.allocation}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Transactions Section */}
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-white mb-6">Recent Transactions</h2>
+          <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-white/10 bg-white/5">
+                    <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Type</th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Asset</th>
+                    <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Amount</th>
+                    <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Price</th>
+                    <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Total</th>
+                    <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Time</th>
+                    <th className="px-6 py-4 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Verification</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {transactions.map((tx) => (
+                    <tr key={tx.id} className="hover:bg-white/5 transition-colors">
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${
+                          tx.type === 'BUY' 
+                            ? 'bg-green-500/20 text-green-400' 
+                            : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {tx.type === 'BUY' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {tx.type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white font-medium">{tx.symbol}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right text-white font-mono">{tx.amount}</td>
+                      <td className="px-6 py-4 text-right text-white font-mono">${tx.price.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-white font-mono">${tx.value.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right text-slate-400">
+                        {new Date(tx.timestamp).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <VerificationBadge verified={true} hash={tx.txHash} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

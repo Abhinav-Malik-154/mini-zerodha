@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { WalletProvider } from '@/context/WalletProvider';
+import { SymbolProvider } from '@/context/SymbolContext'; // ✅ Correct import
 import MainLayout from '@/components/layout/MainLayout';
 import './globals.css';
 
@@ -20,9 +21,11 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <WalletProvider>
-          <MainLayout>
-            {children}
-          </MainLayout>
+          <SymbolProvider> {/* ✅ This works now */}
+            <MainLayout>
+              {children}
+            </MainLayout>
+          </SymbolProvider>
         </WalletProvider>
       </body>
     </html>

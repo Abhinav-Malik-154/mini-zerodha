@@ -1,11 +1,13 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
+import WebSocket from 'ws';
 
 export class WebSocketService {
   private io: SocketIOServer;
-  private activeUsers: Map<string, Set<string>> = new Map(); // symbol -> userIds
+  private activeUsers: Map<string, Set<string>> = new Map();
   private priceUpdateInterval: NodeJS.Timeout | null = null;
   private orderBookInterval: NodeJS.Timeout | null = null;
+  private binanceWs: WebSocket | null = null;
 
   constructor(server: HTTPServer) {
     this.io = new SocketIOServer(server, {
@@ -18,6 +20,7 @@ export class WebSocketService {
 
     console.log('🔌 WebSocket server initializing...');
     this.setupEventHandlers();
+    this.connectToBinance();
     this.startPriceFeed();
   }
 
@@ -54,6 +57,93 @@ export class WebSocketService {
     });
   }
 
+  private connectToBinance() {
+    try {
+      // Connect to Binance WebSocket
+      this.binanceWs = new WebSocket('wss://stream.binance.com:9443/ws');
+
+      this.binanceWs.on('open', () => {
+        console.log('✅ Connected to Binance WebSocket');
+        
+        // Subscribe to BTC, ETH, SOL streams
+        const subscribeMsg = {
+          method: 'SUBSCRIBE',
+          params: [
+            'btcusdt@ticker',
+            'ethusdt@ticker', 
+            'solusdt@ticker',
+            'btcusdt@depth20',
+            'ethusdt@depth20',
+            'solusdt@depth20'
+          ],
+          id: 1
+        };
+        
+        this.binanceWs?.send(JSON.stringify(subscribeMsg));
+      });
+
+      this.binanceWs.on('message', (data: WebSocket.Data) => {
+        try {
+          const message = JSON.parse(data.toString());
+          
+          // Handle ticker updates
+          if (message.stream?.includes('@ticker')) {
+            const symbol = message.stream.replace('@ticker', '').toUpperCase();
+            const tickerData = message.data;
+            
+            const priceData = {
+              symbol: `${symbol}/USD`,
+              price: parseFloat(tickerData.c),
+              change24h: parseFloat(tickerData.P),
+              volume: Math.floor(parseFloat(tickerData.v) / 1000),
+              timestamp: Date.now()
+            };
+            
+            this.io.to(`market:${symbol}/USD`).emit('price-update', priceData);
+            this.io.emit('market-update', priceData);
+          }
+          
+          // Handle order book updates
+          if (message.stream?.includes('@depth20')) {
+            const symbol = message.stream.replace('@depth20', '').toUpperCase();
+            const depthData = message.data;
+            
+            const orderBook = {
+              bids: depthData.bids.map(([price, amount]: [string, string]) => ({
+                price: parseFloat(price),
+                amount: parseFloat(amount)
+              })),
+              asks: depthData.asks.map(([price, amount]: [string, string]) => ({
+                price: parseFloat(price),
+                amount: parseFloat(amount)
+              })),
+              timestamp: Date.now()
+            };
+            
+            this.io.to(`market:${symbol}/USD`).emit('orderbook-update', {
+              symbol: `${symbol}/USD`,
+              ...orderBook
+            });
+          }
+        } catch (error) {
+          console.error('Error parsing Binance message:', error);
+        }
+      });
+
+      this.binanceWs.on('error', (error: Error) => {
+        console.error('❌ Binance WebSocket error:', error);
+      });
+
+      this.binanceWs.on('close', () => {
+        console.log('🔌 Binance WebSocket closed, reconnecting...');
+        setTimeout(() => this.connectToBinance(), 5000);
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to connect to Binance:', error);
+    }
+  }
+
   private sendInitialData(socket: any, symbol: string) {
     const priceData = this.generatePriceData(symbol);
     socket.emit('price-update', priceData);
@@ -67,6 +157,7 @@ export class WebSocketService {
       clearInterval(this.priceUpdateInterval);
     }
 
+    // Fallback price feed in case Binance disconnects
     this.priceUpdateInterval = setInterval(() => {
       const symbols = ['BTC/USD', 'ETH/USD', 'SOL/USD'];
       
@@ -75,7 +166,7 @@ export class WebSocketService {
         this.io.to(`market:${symbol}`).emit('price-update', priceData);
         this.io.emit('market-update', priceData);
       });
-    }, 2000);
+    }, 5000);
 
     if (this.orderBookInterval) {
       clearInterval(this.orderBookInterval);
@@ -91,7 +182,7 @@ export class WebSocketService {
           ...orderBook
         });
       });
-    }, 1000);
+    }, 5000);
   }
 
   private generatePriceData(symbol: string) {
@@ -163,6 +254,10 @@ export class WebSocketService {
   }
 
   public cleanup() {
+    if (this.binanceWs) {
+      this.binanceWs.close();
+    }
+    
     if (this.priceUpdateInterval) {
       clearInterval(this.priceUpdateInterval);
     }

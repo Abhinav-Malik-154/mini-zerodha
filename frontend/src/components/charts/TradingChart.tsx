@@ -1,35 +1,47 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createChart, ColorType, IChartApi, CandlestickData, UTCTimestamp } from 'lightweight-charts';
 import { motion } from 'framer-motion';
-
-// @ts-ignore - Ignore TypeScript errors for lightweight-charts
-import { createChart } from 'lightweight-charts';
+import { useRealTimeData } from '@/hooks/useRealTimeData';
 
 interface ChartData {
-  time: string;
+  time: UTCTimestamp; // Changed to UTCTimestamp (number)
   open: number;
   high: number;
   low: number;
   close: number;
+  volume?: number;
 }
 
 export default function TradingChart() {
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<any>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candlestickSeriesRef = useRef<any>(null);
+  const volumeSeriesRef = useRef<any>(null);
+  const { prices, isConnected } = useRealTimeData();
+  
   const [timeframe, setTimeframe] = useState<'1H' | '24H' | '1W' | '1M'>('24H');
   const [chartData, setChartData] = useState<ChartData[]>([]);
+  const [currentPrice, setCurrentPrice] = useState<number>(66569.43);
 
-  // Generate sample data
+  // Update current price when prices change
   useEffect(() => {
-    const generateSampleData = (): ChartData[] => {
+    if (prices['BTC/USD']) {
+      setCurrentPrice(prices['BTC/USD'].price);
+    }
+  }, [prices]);
+
+  // Generate historical data with correct timestamp format
+  useEffect(() => {
+    const generateHistoricalData = (): ChartData[] => {
       const data: ChartData[] = [];
-      let basePrice = 50000;
-      const now = new Date();
+      let basePrice = currentPrice;
+      const now = Math.floor(Date.now() / 1000); // Current time in seconds
       
       for (let i = 30; i >= 0; i--) {
-        const date = new Date(now);
-        date.setDate(date.getDate() - i);
+        // Use seconds-based timestamp (UTCTimestamp)
+        const time = (now - i * 300) as UTCTimestamp; // 5-minute intervals in seconds
         
         const volatility = 0.02;
         const change = (Math.random() - 0.5) * volatility * basePrice;
@@ -39,7 +51,7 @@ export default function TradingChart() {
         const low = Math.min(open, close) - Math.random() * volatility * basePrice * 0.5;
         
         data.push({
-          time: date.toISOString().split('T')[0],
+          time,
           open,
           high,
           low,
@@ -52,12 +64,12 @@ export default function TradingChart() {
       return data;
     };
 
-    setChartData(generateSampleData());
-  }, []);
+    setChartData(generateHistoricalData());
+  }, [currentPrice, timeframe]);
 
   // Initialize chart
   useEffect(() => {
-    if (!chartContainerRef.current || chartData.length === 0 || chartRef.current) return;
+    if (!chartContainerRef.current || chartData.length === 0) return;
 
     const handleResize = () => {
       if (chartRef.current && chartContainerRef.current) {
@@ -67,93 +79,111 @@ export default function TradingChart() {
       }
     };
 
-    try {
-      // Create chart
-      const chart = createChart(chartContainerRef.current, {
-        layout: {
-          background: { color: 'transparent' },
-          textColor: '#94A3B8',
-          fontFamily: 'Inter, sans-serif',
+    // Create chart
+    const chart = createChart(chartContainerRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: '#94A3B8',
+        fontFamily: 'Inter, sans-serif',
+      },
+      width: chartContainerRef.current.clientWidth,
+      height: 400,
+      grid: {
+        vertLines: { color: '#1E293B' },
+        horzLines: { color: '#1E293B' },
+      },
+      crosshair: {
+        mode: 0,
+        vertLine: {
+          color: '#3B82F6',
+          width: 1,
+          style: 1,
+          labelBackgroundColor: '#1E293B',
         },
-        width: chartContainerRef.current.clientWidth,
-        height: 400,
-        grid: {
-          vertLines: { color: '#1E293B' },
-          horzLines: { color: '#1E293B' },
+        horzLine: {
+          color: '#3B82F6',
+          width: 1,
+          style: 1,
+          labelBackgroundColor: '#1E293B',
         },
-        timeScale: {
-          borderColor: '#1E293B',
-          timeVisible: true,
-          secondsVisible: false,
-        },
-      });
+      },
+      timeScale: {
+        borderColor: '#1E293B',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
 
-      chartRef.current = chart;
+    chartRef.current = chart;
 
-      // Add candlestick series
-      const candlestickSeries = chart.addCandlestickSeries({
-        upColor: '#10B981',
-        downColor: '#EF4444',
-        borderDownColor: '#EF4444',
-        borderUpColor: '#10B981',
-        wickDownColor: '#EF4444',
-        wickUpColor: '#10B981',
-      });
+    // Add candlestick series
+    const candlestickSeries = chart.addCandlestickSeries({
+      upColor: '#10B981',
+      downColor: '#EF4444',
+      borderDownColor: '#EF4444',
+      borderUpColor: '#10B981',
+      wickDownColor: '#EF4444',
+      wickUpColor: '#10B981',
+    });
 
-      // Format data
-      const candlestickData = chartData.map(item => ({
-        time: item.time,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-      }));
+    candlestickSeriesRef.current = candlestickSeries;
 
-      candlestickSeries.setData(candlestickData);
+    // Format data for chart - time is already UTCTimestamp
+    candlestickSeries.setData(chartData);
 
-      // Add volume series
-      const volumeSeries = chart.addHistogramSeries({
-        color: '#3B82F6',
-        priceFormat: {
-          type: 'volume',
-        },
-        priceScaleId: '',
-      });
+    // Add volume series
+    const volumeSeries = chart.addHistogramSeries({
+      color: '#3B82F6',
+      priceFormat: {
+        type: 'volume',
+      },
+      priceScaleId: '',
+    });
 
-      // Configure volume scale
-      chart.priceScale('').applyOptions({
-        scaleMargins: {
-          top: 0.8,
-          bottom: 0,
-        },
-      });
+    volumeSeriesRef.current = volumeSeries;
 
-      // Generate volume data
-      const volumeData = chartData.map((d, i) => ({
-        time: d.time,
-        value: Math.random() * 1000000 + 500000,
-        color: d.close >= d.open ? '#10B98180' : '#EF444480',
-      }));
+    // Configure volume scale
+    chart.priceScale('').applyOptions({
+      scaleMargins: {
+        top: 0.8,
+        bottom: 0,
+      },
+    });
 
-      volumeSeries.setData(volumeData);
+    // Generate volume data
+    const volumeData = chartData.map((d, i) => ({
+      time: d.time,
+      value: Math.random() * 1000000 + 500000,
+      color: d.close >= d.open ? '#10B98180' : '#EF444480',
+    }));
 
-      // Fit content
-      chart.timeScale().fitContent();
+    volumeSeries.setData(volumeData);
 
-      window.addEventListener('resize', handleResize);
+    // Fit content
+    chart.timeScale().fitContent();
 
-    } catch (error) {
-      console.error('Error creating chart:', error);
-    }
+    window.addEventListener('resize', handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (chartRef.current) {
-        chartRef.current.remove();
-        chartRef.current = null;
-      }
+      chart.remove();
     };
   }, [chartData]);
+
+  // Update last candle with real-time price
+  useEffect(() => {
+    if (candlestickSeriesRef.current && chartData.length > 0) {
+      const lastCandle = chartData[chartData.length - 1];
+      const updatedCandle = {
+        ...lastCandle,
+        close: currentPrice,
+        high: Math.max(lastCandle.high, currentPrice),
+        low: Math.min(lastCandle.low, currentPrice),
+      };
+      
+      candlestickSeriesRef.current.update(updatedCandle);
+    }
+  }, [currentPrice, chartData]);
 
   return (
     <motion.div
@@ -164,9 +194,19 @@ export default function TradingChart() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-semibold text-white">BTC/USD Chart</h2>
-          <p className="text-sm text-emerald-400">▲ 2.34%</p>
+          <p className={`text-sm ${prices['BTC/USD']?.change24h >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {prices['BTC/USD']?.change24h >= 0 ? '▲' : '▼'} {Math.abs(prices['BTC/USD']?.change24h || 0).toFixed(2)}%
+          </p>
         </div>
         
+        {/* Connection Status */}
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+          <span className="text-xs text-slate-400">
+            {isConnected ? 'Live' : 'Reconnecting...'}
+          </span>
+        </div>
+
         {/* Timeframe selector */}
         <div className="flex gap-2">
           {(['1H', '24H', '1W', '1M'] as const).map((tf) => (
@@ -188,17 +228,11 @@ export default function TradingChart() {
       {/* Chart container */}
       <div ref={chartContainerRef} className="w-full h-[400px]" />
 
-      {/* Chart stats */}
-      {chartData.length > 0 && (
-        <div className="flex items-center justify-between mt-4 text-xs text-slate-400">
-          <div className="flex gap-4">
-            <span>O: <span className="text-white">${chartData[chartData.length - 1]?.open.toLocaleString()}</span></span>
-            <span>H: <span className="text-white">${chartData[chartData.length - 1]?.high.toLocaleString()}</span></span>
-            <span>L: <span className="text-white">${chartData[chartData.length - 1]?.low.toLocaleString()}</span></span>
-            <span>C: <span className="text-white">${chartData[chartData.length - 1]?.close.toLocaleString()}</span></span>
-          </div>
-        </div>
-      )}
+      {/* Current price */}
+      <div className="mt-4 text-right">
+        <span className="text-sm text-slate-400">Current Price: </span>
+        <span className="text-lg font-bold text-white">${currentPrice.toLocaleString()}</span>
+      </div>
     </motion.div>
   );
 }

@@ -6,7 +6,8 @@ import { mainnet, polygon, polygonAmoy } from 'wagmi/chains';
 const projectId = process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID || '';
 
 if (!projectId) {
-  throw new Error('NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID is not defined');
+  // warn at runtime but don't crash build/SSR — WalletConnect features will be disabled
+  console.warn('⚠️  NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID is not set — WalletConnect will be disabled.');
 }
 
 // Define metadata for your app

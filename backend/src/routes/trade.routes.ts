@@ -1,10 +1,33 @@
 import { Router, Request, Response } from 'express';
+import { authenticate } from '../middleware/authenticate';
 import { BlockchainService } from '../services/blockchain.service';
 import Trade from '../models/Trade.model';
 import User from '../models/User.model';
 
 const router = Router();
-const blockchainService = new BlockchainService();
+
+// Fix #5: wrap at module-level so a missing env var doesn't crash ALL routes
+let blockchainService: BlockchainService | null = null;
+try {
+  blockchainService = new BlockchainService();
+} catch (err) {
+  console.error('⚠️  BlockchainService unavailable — blockchain features disabled:', err);
+}
+
+// Fix #10: validated symbol/side whitelists
+const VALID_SYMBOLS = new Set(['BTC/USD', 'ETH/USD', 'SOL/USD']);
+const VALID_SIDES   = new Set(['BUY', 'SELL']);
+
+function validateTrade(symbol: any, price: any, quantity: any, side: any): string | null {
+  if (!symbol || !VALID_SYMBOLS.has(symbol))    return `symbol must be one of: ${[...VALID_SYMBOLS].join(', ')}`;
+  if (!side   || !VALID_SIDES.has(side))         return `side must be BUY or SELL`;
+  const p = Number(price), q = Number(quantity);
+  if (!isFinite(p) || p <= 0)                    return 'price must be a positive number';
+  if (!isFinite(q) || q <= 0)                    return 'quantity must be a positive number';
+  if (p > 10_000_000)                            return 'price out of range';
+  if (q > 1_000_000)                             return 'quantity out of range';
+  return null;
+}
 
 // Test route
 router.get('/test', (_req: Request, res: Response) => {
@@ -15,32 +38,38 @@ router.get('/test', (_req: Request, res: Response) => {
   });
 });
 
-// Verify a trade
-router.post('/verify', async (req: Request, res: Response) => {
+// Verify a trade (requires authentication)
+router.post('/verify', authenticate, async (req: Request, res: Response) => {
   try {
-    const { symbol, price, quantity, side, userId, walletAddress } = req.body;
-    
-    if (!symbol || !price || !quantity || !side) {
-      return res.status(400).json({
+    const { symbol, price, quantity, side, walletAddress } = req.body;
+    const userId = (req as any).user?.walletAddress || req.body.userId || 'anonymous';
+
+    // Fix #10: validate all fields before touching DB or chain
+    const validationError = validateTrade(symbol, price, quantity, side);
+    if (validationError) {
+      return res.status(400).json({ success: false, error: validationError });
+    }
+
+    // Fix #5: return 503 if blockchain is unavailable
+    if (!blockchainService) {
+      return res.status(503).json({
         success: false,
-        error: 'Missing required fields: symbol, price, quantity, side'
+        error: 'Blockchain service is unavailable. Check RPC_URL, PRIVATE_KEY and CONTRACT_ADDRESS in .env'
       });
     }
-    
+
     const tradeData = {
       symbol,
-      price,
-      quantity,
+      price: Number(price),
+      quantity: Number(quantity),
       side,
-      userId: userId || 'anonymous',
+      userId,
       walletAddress: walletAddress || null,
       timestamp: Date.now()
     };
-    
-    // Verify on blockchain
+
     const result = await blockchainService.verifyTrade(tradeData);
-    
-    // Save to database
+
     const newTrade = new Trade({
       userId: tradeData.userId,
       walletAddress: tradeData.walletAddress,
@@ -53,34 +82,27 @@ router.post('/verify', async (req: Request, res: Response) => {
       blockNumber: result.blockNumber,
       verifiedAt: new Date()
     });
-    
+
     await newTrade.save();
     console.log('💾 Trade saved to database');
-    
-    // Update or create user
+
+    // Update user stats
     if (walletAddress) {
       await User.findOneAndUpdate(
         { walletAddress },
-        { 
+        {
           $set: { lastLogin: new Date() },
-          $setOnInsert: { 
-            walletAddress,
-            createdAt: new Date(),
-            username: userId || null
-          },
-          $inc: { tradeCount: 1, totalVolume: price * quantity }
+          $setOnInsert: { walletAddress, createdAt: new Date() },
+          $inc: { tradeCount: 1, totalVolume: Number(price) * Number(quantity) }
         },
         { upsert: true }
       );
     }
-    
+
     return res.json({
       success: true,
       message: 'Trade verified on blockchain and saved to database',
-      data: {
-        ...result,
-        dbId: newTrade._id
-      }
+      data: { ...result, dbId: newTrade._id }
     });
   } catch (error: any) {
     console.error('❌ Trade verification failed:', error);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   TrendingUp, TrendingDown, Wallet, PieChart,
@@ -39,11 +39,12 @@ interface Transaction {
 }
 
 export default function PortfolioPage() {
-  const { prices, recentTrades, isConnected } = useRealTimeData();
+  const { prices, isConnected } = useRealTimeData();
   const [hideBalances, setHideBalances] = useState(false);
   const [timeframe, setTimeframe] = useState<'1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL'>('1M');
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const appliedIds = useRef<Set<string>>(new Set());
 
   // Mock holdings data - in real app, this would come from your backend
   const [holdings, setHoldings] = useState<Holding[]>([
@@ -82,26 +83,41 @@ export default function PortfolioPage() {
     setIsLoading(false);
   }, [prices]);
 
-  // Add real-time transactions
+  // Apply trades from localStorage (written by QuickTrade on each order)
+  const applyStoredTrades = useCallback(() => {
+    const stored: Transaction[] = JSON.parse(localStorage.getItem('portfolio_trades') || '[]');
+    const fresh = stored.filter(t => !appliedIds.current.has(t.id));
+    if (fresh.length === 0) return;
+
+    setTransactions(prev => [...fresh, ...prev]);
+    setHoldings(prev =>
+      prev.map(holding => {
+        const relevant = fresh.filter(t => t.symbol === holding.symbol);
+        if (relevant.length === 0) return holding;
+        let { balance, avgBuyPrice } = holding;
+        for (const trade of relevant) {
+          if (trade.type === 'BUY') {
+            const newBalance = balance + trade.amount;
+            avgBuyPrice = (balance * avgBuyPrice + trade.amount * trade.price) / newBalance;
+            balance = newBalance;
+          } else {
+            balance = Math.max(0, balance - trade.amount);
+          }
+        }
+        const value = balance * holding.currentPrice;
+        const pnl = value - balance * avgBuyPrice;
+        const pnlPercentage = avgBuyPrice > 0 ? ((holding.currentPrice - avgBuyPrice) / avgBuyPrice) * 100 : 0;
+        return { ...holding, balance, avgBuyPrice, value, pnl, pnlPercentage };
+      })
+    );
+    fresh.forEach(t => appliedIds.current.add(t.id));
+  }, []);
+
   useEffect(() => {
-    if (recentTrades.length > 0) {
-      const newTx = recentTrades[0];
-      if (newTx && !transactions.find(t => t.txHash === newTx.tradeHash)) {
-        const transaction: Transaction = {
-          id: Date.now().toString(),
-          type: newTx.side as 'BUY' | 'SELL',
-          symbol: newTx.symbol.split('/')[0],
-          amount: newTx.amount,
-          price: newTx.price,
-          value: newTx.amount * newTx.price,
-          timestamp: new Date().toISOString(),
-          status: 'completed',
-          txHash: newTx.tradeHash || '0x' + Math.random().toString(16).substring(2, 10),
-        };
-        setTransactions(prev => [transaction, ...prev].slice(0, 10));
-      }
-    }
-  }, [recentTrades]);
+    applyStoredTrades();
+    window.addEventListener('portfolio_updated', applyStoredTrades);
+    return () => window.removeEventListener('portfolio_updated', applyStoredTrades);
+  }, [applyStoredTrades]);
 
   const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
   const totalPnl = holdings.reduce((sum, h) => sum + h.pnl, 0);

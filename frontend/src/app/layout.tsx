@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { WalletProvider } from '@/context/WalletProvider';
+import { AuthProvider } from '@/context/AuthProvider';
 import { SymbolProvider } from '@/context/SymbolContext'; // ✅ Correct import
 import MainLayout from '@/components/layout/MainLayout';
 import './globals.css';
@@ -21,11 +22,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <WalletProvider>
-          <SymbolProvider> {/* ✅ This works now */}
-            <MainLayout>
-              {children}
-            </MainLayout>
-          </SymbolProvider>
+          <AuthProvider>
+            <SymbolProvider> {/* ✅ This works now */}
+              <MainLayout>
+                {children}
+              </MainLayout>
+            </SymbolProvider>
+          </AuthProvider>
         </WalletProvider>
       </body>
     </html>

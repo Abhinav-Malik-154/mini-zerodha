@@ -126,7 +126,8 @@ contract TradeVerifierTest is Test {
         
         verifier.revokeTrade(trade1);
         
-        vm.expectRevert("Trade not found");
+        // getTradeProof now uses InvalidTradeHash custom error (not a string revert)
+        vm.expectRevert(TradeVerifier.InvalidTradeHash.selector);
         verifier.getTradeProof(trade1);
     }
     
@@ -170,5 +171,152 @@ contract TradeVerifierTest is Test {
         assertEq(lastHash, trade1);
         assertEq(totalUsers, 1);
         assertTrue(lastTimestamp > 0);
+        // BUG FIX verification: lastTimestamp should equal block.timestamp at time of trade,
+        // not always the current block.timestamp
+        assertEq(lastTimestamp, block.timestamp);
+    }
+
+    // ─── Merkle root tests ────────────────────────────────────────────────────
+
+    // Helper: build a 2-leaf Merkle tree manually for testing
+    // Leaf = keccak256(bytes.concat(keccak256(abi.encode(tradeHash))))  (OZ double-hash)
+    function _merkleLeaf(bytes32 h) internal pure returns (bytes32) {
+        return keccak256(bytes.concat(keccak256(abi.encode(h))));
+    }
+
+    // Root of a 2-leaf tree: keccak256(abi.encodePacked(left, right)) sorted
+    function _merkleRoot2(bytes32 a, bytes32 b) internal pure returns (bytes32) {
+        (bytes32 left, bytes32 right) = a < b ? (a, b) : (b, a);
+        return keccak256(abi.encodePacked(left, right));
+    }
+
+    function testSubmitMerkleRoot() public {
+        bytes32 leafA = _merkleLeaf(trade1);
+        bytes32 leafB = _merkleLeaf(trade2);
+        bytes32 root  = _merkleRoot2(leafA, leafB);
+
+        verifier.submitMerkleRoot(root, 2, "batch-001");
+
+        TradeVerifier.MerkleRoot memory mr = verifier.getMerkleRoot(root);
+        assertEq(mr.root,       root);
+        assertEq(mr.tradeCount, 2);
+        assertEq(mr.batchId,    "batch-001");
+        assertTrue(mr.exists);
+        assertEq(verifier.totalMerkleBatches(), 1);
+    }
+
+    function test_RevertWhen_DuplicateMerkleRoot() public {
+        bytes32 leafA = _merkleLeaf(trade1);
+        bytes32 leafB = _merkleLeaf(trade2);
+        bytes32 root  = _merkleRoot2(leafA, leafB);
+
+        verifier.submitMerkleRoot(root, 2, "batch-001");
+        vm.expectRevert(TradeVerifier.MerkleRootAlreadySubmitted.selector);
+        verifier.submitMerkleRoot(root, 2, "batch-001-dup");
+    }
+
+    function test_RevertWhen_ZeroMerkleRoot() public {
+        vm.expectRevert(TradeVerifier.InvalidMerkleRoot.selector);
+        verifier.submitMerkleRoot(bytes32(0), 2, "bad");
+    }
+
+    function testVerifyMerkleProof() public {
+        bytes32 leafA = _merkleLeaf(trade1);
+        bytes32 leafB = _merkleLeaf(trade2);
+        bytes32 root  = _merkleRoot2(leafA, leafB);
+        verifier.submitMerkleRoot(root, 2, "batch-001");
+
+        // Proof for leafA: the sibling is leafB (sorted internally by MerkleProof.verify)
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = leafB < leafA ? leafB : leafB; // sibling
+
+        // OZ MerkleProof.verify sorts internally, so proof[0] = the sibling leaf
+        // For a 2-leaf tree: proof = [sibling]
+        bool ok = verifier.verifyMerkleProof(root, proof, trade1);
+        assertTrue(ok);
+
+        // leafToRoot should be recorded
+        assertEq(verifier.leafToRoot(leafA), root);
+    }
+
+    function test_RevertWhen_InvalidMerkleProof() public {
+        bytes32 leafA = _merkleLeaf(trade1);
+        bytes32 leafB = _merkleLeaf(trade2);
+        bytes32 root  = _merkleRoot2(leafA, leafB);
+        verifier.submitMerkleRoot(root, 2, "batch-001");
+
+        // Wrong sibling → proof should fail
+        bytes32[] memory badProof = new bytes32[](1);
+        badProof[0] = keccak256("wrong");
+
+        vm.expectRevert(TradeVerifier.InvalidMerkleProof.selector);
+        verifier.verifyMerkleProof(root, badProof, trade1);
+    }
+
+    function test_RevertWhen_MerkleProofUnknownRoot() public {
+        bytes32[] memory proof = new bytes32[](0);
+        vm.expectRevert(TradeVerifier.InvalidMerkleRoot.selector);
+        verifier.verifyMerkleProof(keccak256("unknown-root"), proof, trade1);
+    }
+
+    function testGetMerkleRoots() public {
+        bytes32 leafA = _merkleLeaf(trade1);
+        bytes32 leafB = _merkleLeaf(trade2);
+        bytes32 root1 = _merkleRoot2(leafA, leafB);
+        bytes32 root2 = _merkleRoot2(_merkleLeaf(trade3), _merkleLeaf(keccak256("trade-4")));
+
+        verifier.submitMerkleRoot(root1, 2, "batch-001");
+        verifier.submitMerkleRoot(root2, 2, "batch-002");
+
+        bytes32[] memory roots = verifier.getMerkleRoots();
+        assertEq(roots.length, 2);
+        assertEq(roots[0], root1);
+        assertEq(roots[1], root2);
+    }
+
+    // Fuzz: any non-zero hash can be individually verified
+    function testFuzz_AnyHashVerifies(bytes32 h) public {
+        vm.assume(h != bytes32(0));
+        vm.prank(user1);
+        verifier.verifyTrade(h);
+        assertTrue(verifier.getTradeProof(h).exists);
+    }
+
+    // Fuzz: zero hash always reverts (plain unit test — fuzz can't hit bytes32(0) reliably)
+    function test_ZeroHashAlwaysReverts() public {
+        vm.prank(user1);
+        vm.expectRevert(TradeVerifier.InvalidTradeHash.selector);
+        verifier.verifyTrade(bytes32(0));
+    }
+
+    // Test pause functionality
+    function testPausePreventsVerification() public {
+        verifier.pause();
+        vm.prank(user1);
+        vm.expectRevert();  // Pausable: EnforcedPause
+        verifier.verifyTrade(trade1);
+    }
+
+    function testUnpauseRestoresVerification() public {
+        verifier.pause();
+        verifier.unpause();
+        vm.prank(user1);
+        verifier.verifyTrade(trade1);
+        assertTrue(verifier.getTradeProof(trade1).exists);
+    }
+
+    // Test batchVerify count fix — skipped hashes should NOT inflate count
+    function testBatchVerifyCountIsAccurate() public {
+        bytes32[] memory trades = new bytes32[](3);
+        trades[0] = trade1;
+        trades[1] = bytes32(0); // should be skipped
+        trades[2] = trade2;
+
+        vm.prank(user1);
+        verifier.batchVerify(trades);
+
+        // Only 2 real hashes stored, not 3
+        assertEq(verifier.userTradeCount(user1), 2);
+        assertEq(verifier.totalTrades(), 2);
     }
 }

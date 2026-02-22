@@ -113,12 +113,13 @@ This project was built as a full-stack demonstration of blockchain integration i
     Open your browser and navigate to `http://localhost:3000`.
 
 ## 🧪 Testing the Platform
+> **Note:** the frontend now includes a wallet connector. Make sure you set the `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` environment variable (any non‑empty string will work for local testing) before starting the frontend.
 
 1.  Ensure all three services are running:
     -   **Terminal 1**: `anvil` (Blockchain)
     -   **Terminal 2**: `cd backend && npm run dev` (Backend API)
     -   **Terminal 3**: `cd frontend && npm run dev` (Frontend UI)
-2.  Visit the frontend, connect your wallet (if implemented), and place a trade using the form.
+2.  Visit the frontend, connect your wallet (use the new **Connect Wallet** button in the header), switch accounts or disconnect via the dropdown, then place a trade using the form.
 3.  Observe the trade appear in "Recent Trades" with a "Verified ✓" badge.
 4.  Click the badge to view the transaction on the blockchain explorer (Amoy Polygonscan for testnet, or a local explorer for Anvil).
 
@@ -130,7 +131,7 @@ This project was built as a full-stack demonstration of blockchain integration i
 -   **✅ Phase 4:** Frontend UI/UX Development (Next.js, Tailwind)
 -   **✅ Phase 5:** Core Integration & Local Testing
 -   **⬜ Phase 6:** Deployment to Public Testnet (Polygon Amoy)
--   **⬜ Phase 7:** Wallet Connection (Web3Modal)
+-   **✅ Phase 7:** Wallet Connection (custom ConnectButton with account switching and logout)
 -   **⬜ Phase 8:** Real-time Data (WebSockets)
 
 ## 🤝 Contributing

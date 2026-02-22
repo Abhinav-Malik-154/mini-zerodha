@@ -3,8 +3,9 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// Import your contract ABI
-const contractABI = require('../abis/TradeVerifier.json');
+// Import your contract ABI (Forge output contains abi as a nested key)
+const contractJSON = require('../abis/TradeVerifier.json');
+const contractABI = contractJSON.abi || contractJSON;
 
 export class BlockchainService {
   private provider: ethers.JsonRpcProvider;
@@ -50,20 +51,26 @@ export class BlockchainService {
   // Verify a trade on-chain
   async verifyTrade(tradeData: any): Promise<any> {
     try {
-      // Create a unique hash for the trade
+      // Deterministic ABI-compatible hash — matches keccak256(abi.encode(...)) in Solidity
+      // Field order MUST match Interact.s.sol: 'trade', timestamp, trader, keccak256(symbol), price, quantity
       const tradeHash = ethers.keccak256(
-        ethers.toUtf8Bytes(JSON.stringify(tradeData))
+        ethers.AbiCoder.defaultAbiCoder().encode(
+          ['string', 'uint256', 'address', 'bytes32', 'uint256', 'uint256'],
+          [
+            'trade',
+            BigInt(tradeData.timestamp),
+            tradeData.walletAddress || ethers.ZeroAddress,
+            ethers.keccak256(ethers.toUtf8Bytes(tradeData.symbol)),
+            BigInt(Math.round(tradeData.price)),
+            BigInt(Math.round(tradeData.quantity * 1e8)), // 8 decimal places
+          ]
+        )
       );
-      
-      console.log(`🔗 Verifying trade: ${tradeHash}`);
-      
-      // Call your smart contract
-      console.log(`🔗 Calling verifyTrade on smart contract with tradeHash: ${tradeHash}`);
-      const tx = await this.contract!.verifyTrade(tradeHash);
-      console.log(`🔗 verifyTrade called successfully, transaction hash: ${tx.hash}`);
-//                                 ^ Add ! here
+
+      console.log(`🔗 Verifying trade on-chain: ${tradeHash}`);
+      const tx = await this.contract.verifyTrade(tradeHash);
       const receipt = await tx.wait();
-      
+
       return {
         success: true,
         tradeHash,
@@ -104,27 +111,6 @@ export class BlockchainService {
     }
   }
   
-  // Get contract statistics
-
-// Get contract statistics
-  // async getStats(): Promise<any> {
-  //   try {
-  //     const totalTrades = await this.contract.totalTrades();
-  //     const totalUsers = await this.contract.totalUniqueUsers();
-  //     const lastTradeHash = await this.contract.lastTradeHash();
-      
-  //     return {
-  //       totalTrades: totalTrades.toString(),
-  //       totalUsers: totalUsers.toString(),
-  //       lastTradeHash: lastTradeHash,
-  //       lastTimestamp: Date.now().toString() // You might not have this
-  //     };
-  //   } catch (error) {
-  //     console.error('❌ Failed to get stats:', error);
-  //     throw error;
-  //   }
-  // }
-
   async getStats(): Promise<any> {
     try {
       const stats = await this.contract.getStats();

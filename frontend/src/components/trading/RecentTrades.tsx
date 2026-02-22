@@ -3,25 +3,21 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import VerificationBadge from '../ui/VerificationBadge';
+import { useRealTimeData, TradeData } from '@/hooks/useRealTimeData';
 
-interface Trade {
-  id: string;
-  side: 'BUY' | 'SELL';
-  symbol: string;
-  price: number;
-  amount: number;
-  time: string;
-  tradeHash: string;
-  verified: boolean;
-}
+// reuse the type from the websocket hook
+// if additional fields are needed they can be extended here
+export type Trade = TradeData;
 
 export default function RecentTrades() {
+  // use global feed from websocket hook (marketwide activity)
+  const { recentTrades: socketTrades } = useRealTimeData();
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
   const [lastTrade, setLastTrade] = useState<Trade | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Initialize with mock data
+    // initial fallback data while websocket warms up
     const mockTrades: Trade[] = [
       {
         id: '1',
@@ -57,26 +53,14 @@ export default function RecentTrades() {
 
     setRecentTrades(mockTrades);
     setIsLoading(false);
-
-    // Simulate new trades coming in
-    const interval = setInterval(() => {
-      const newTrade: Trade = {
-        id: Date.now().toString(),
-        side: Math.random() > 0.5 ? 'BUY' : 'SELL',
-        symbol: ['BTC/USD', 'ETH/USD', 'SOL/USD'][Math.floor(Math.random() * 3)],
-        price: 50000 + Math.random() * 20000,
-        amount: Math.random() * 2,
-        time: 'Just now',
-        tradeHash: `0x${Math.random().toString(16).substring(2, 10)}...`,
-        verified: true
-      };
-      
-      setLastTrade(newTrade);
-      setRecentTrades(prev => [newTrade, ...prev].slice(0, 10));
-    }, 10000);
-
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (socketTrades && socketTrades.length) {
+      setRecentTrades(prev => [socketTrades[0], ...prev].slice(0, 10));
+      setLastTrade(socketTrades[0]);
+    }
+  }, [socketTrades]);
 
   if (isLoading) {
     return (
@@ -123,7 +107,7 @@ export default function RecentTrades() {
                   {lastTrade.amount} @ ${lastTrade.price.toLocaleString()}
                 </span>
                 <span className="text-xs text-slate-400">Just now</span>
-                <VerificationBadge verified={true} hash={lastTrade.tradeHash} />
+                <VerificationBadge verified={true} hash={lastTrade.tradeHash || ''} />
               </div>
             </motion.div>
           )}
@@ -154,7 +138,7 @@ export default function RecentTrades() {
                 </span>
                 <span className="text-xs text-slate-400">{trade.time}</span>
                 {trade.verified && (
-                  <VerificationBadge verified={true} hash={trade.tradeHash} />
+                  <VerificationBadge verified={true} hash={trade.tradeHash || ''} />
                 )}
               </div>
             </motion.div>

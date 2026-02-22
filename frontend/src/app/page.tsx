@@ -3,9 +3,7 @@
 import { motion } from 'framer-motion';
 import PriceTicker from '@/components/trading/PriceTicker';
 import OrderBook from '@/components/trading/OrderBook';
-import TradeForm from '@/components/trading/TradeForm';
-import RecentTrades from '@/components/trading/RecentTrades';
-// import TradingChart from '@/components/charts/TradingChart';
+import QuickTrade from '@/components/trading/QuickTrade';
 import DynamicTradingChart from '@/components/charts/DynamicTradingChart';
 
 export default function Home() {
@@ -41,20 +39,14 @@ export default function Home() {
 
       {/* Main Trading Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart - Takes 2 columns on large screens */}
         <div className="lg:col-span-2">
           <DynamicTradingChart />
         </div>
-
-        {/* Order Book - Takes 1 column */}
         <OrderBook />
       </div>
 
-      {/* Trade Form and Recent Trades */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <TradeForm />
-        <RecentTrades />
-      </div>
+      {/* Quick Trade — BTC/USD, ETH/USD, SOL/USD */}
+      <QuickTrade />
     </div>
   );
 }

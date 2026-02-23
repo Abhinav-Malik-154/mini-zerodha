@@ -41,8 +41,17 @@ router.get('/test', (_req: Request, res: Response) => {
 // Verify a trade (requires authentication)
 router.post('/verify', authenticate, async (req: Request, res: Response) => {
   try {
-    const { symbol, price, quantity, side, walletAddress } = req.body;
-    const userId = (req as any).user?.walletAddress || req.body.userId || 'anonymous';
+    const { symbol, price, quantity, side } = req.body;
+    
+    // SECURITY FIX: Trust the token, not the body
+    const { walletAddress, userId: tokenUserId } = (req as any).user || {};
+    
+    if (!walletAddress) {
+      return res.status(401).json({ success: false, error: 'User must be authenticated' });
+    }
+    
+    // Prefer the real Mongo userId if available, else fallback to wallet address (legacy/compat)
+    const userId = tokenUserId || walletAddress;
 
     // Fix #10: validate all fields before touching DB or chain
     const validationError = validateTrade(symbol, price, quantity, side);
@@ -69,6 +78,27 @@ router.post('/verify', authenticate, async (req: Request, res: Response) => {
     };
 
     const result = await blockchainService.verifyTrade(tradeData);
+
+    // Wallet ETH movement for ALL trades
+    // BUY:  User already sent ETH to treasury from the frontend MetaMask popup.
+    // SELL: Treasury sends ETH proceeds back to the user.
+    if (walletAddress) {
+      if (side === 'BUY') {
+        const clientEthPrice = Number(req.body.ethPrice) || 3000;
+        const costInEth = (Number(quantity) * Number(price)) / clientEthPrice;
+        console.log(`📥 BUY recorded: user paid ~${costInEth.toFixed(6)} ETH for ${quantity} ${symbol}`);
+      } else if (side === 'SELL') {
+        const clientEthPrice = Number(req.body.ethPrice) || 3000;
+        const proceedsInEth = (Number(quantity) * Number(price)) / clientEthPrice;
+        console.log(`💸 SELL: Sending ~${proceedsInEth.toFixed(6)} ETH to ${walletAddress}`);
+        try {
+          const fundTxHash = await blockchainService!.fundWallet(walletAddress, proceedsInEth.toFixed(18));
+          console.log('✅ ETH proceeds sent:', fundTxHash);
+        } catch (fundErr) {
+          console.error('❌ Failed to send ETH proceeds:', fundErr);
+        }
+      }
+    }
 
     const newTrade = new Trade({
       userId: tradeData.userId,
@@ -102,7 +132,18 @@ router.post('/verify', authenticate, async (req: Request, res: Response) => {
     return res.json({
       success: true,
       message: 'Trade verified on blockchain and saved to database',
-      data: { ...result, dbId: newTrade._id }
+      data: {
+        ...result,
+        dbId: newTrade._id,
+        trade: {
+          symbol: newTrade.symbol,
+          side: newTrade.side,
+          price: newTrade.price,
+          quantity: newTrade.quantity,
+          walletAddress: newTrade.walletAddress,
+          verifiedAt: newTrade.verifiedAt
+        }
+      }
     });
   } catch (error: any) {
     console.error('❌ Trade verification failed:', error);

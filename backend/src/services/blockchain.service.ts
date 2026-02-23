@@ -51,6 +51,12 @@ export class BlockchainService {
   // Verify a trade on-chain
   async verifyTrade(tradeData: any): Promise<any> {
     try {
+      if (!tradeData || !tradeData.symbol || !tradeData.price || !tradeData.quantity) {
+        throw new Error('❌ Invalid trade data: missing required fields');
+      }
+
+      const trader = tradeData.walletAddress || ethers.ZeroAddress;
+      
       // Deterministic ABI-compatible hash — matches keccak256(abi.encode(...)) in Solidity
       // Field order MUST match Interact.s.sol: 'trade', timestamp, trader, keccak256(symbol), price, quantity
       const tradeHash = ethers.keccak256(
@@ -58,8 +64,8 @@ export class BlockchainService {
           ['string', 'uint256', 'address', 'bytes32', 'uint256', 'uint256'],
           [
             'trade',
-            BigInt(tradeData.timestamp),
-            tradeData.walletAddress || ethers.ZeroAddress,
+            BigInt(tradeData.timestamp || Date.now()),
+            trader,
             ethers.keccak256(ethers.toUtf8Bytes(tradeData.symbol)),
             BigInt(Math.round(tradeData.price)),
             BigInt(Math.round(tradeData.quantity * 1e8)), // 8 decimal places
@@ -67,8 +73,10 @@ export class BlockchainService {
         )
       );
 
-      console.log(`🔗 Verifying trade on-chain: ${tradeHash}`);
-      const tx = await this.contract.verifyTrade(tradeHash);
+      console.log(`🔗 Verifying trade on-chain: ${tradeHash} for trader: ${trader}`);
+      
+      // Fix: call verifyTrade with BOTH hash and trader address
+      const tx = await this.contract.verifyTrade(tradeHash, trader);
       const receipt = await tx.wait();
 
       return {
@@ -97,6 +105,28 @@ export class BlockchainService {
       };
     } catch (error) {
       console.error('❌ Failed to get trade proof:', error);
+      throw error;
+    }
+  }
+
+  // Faucet: Send ETH to a specific address (for dev/testing only)
+  async fundWallet(address: string, amountEth: string = '5.0'): Promise<string> {
+    try {
+      if (!this.wallet) throw new Error('Wallet not initialized');
+      
+      // Use 'pending' to account for in-flight verifyTrade TX that may not be mined yet
+      const nonce = await this.provider.getTransactionCount(this.wallet.address, 'pending');
+      console.log(`💸 Funding wallet ${address} with nonce ${nonce}`);
+
+      const tx = await this.wallet.sendTransaction({
+        to: address,
+        value: ethers.parseEther(amountEth),
+        nonce: nonce
+      });
+      await tx.wait();
+      return tx.hash;
+    } catch (error) {
+      console.error('❌ Faucet failed:', error);
       throw error;
     }
   }

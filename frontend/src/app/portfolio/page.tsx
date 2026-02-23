@@ -10,6 +10,8 @@ import {
   ChevronDown, ChevronRight, Star, Copy
 } from 'lucide-react';
 import { useRealTimeData } from '@/hooks/useRealTimeData';
+import { useAuth } from '@/context/AuthProvider';
+import { useWallet } from '@/context/WalletProvider';
 import VerificationBadge from '@/components/ui/VerificationBadge';
 
 interface Holding {
@@ -40,88 +42,161 @@ interface Transaction {
 
 export default function PortfolioPage() {
   const { prices, isConnected } = useRealTimeData();
+  // Safe access to localStorage
+  const [address, setAddress] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setAddress(localStorage.getItem('user_address'));
+    }
+  }, []);
+
+  const { user } = useAuth();
+  const { refreshBalance } = useWallet();
   const [hideBalances, setHideBalances] = useState(false);
   const [timeframe, setTimeframe] = useState<'1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL'>('1M');
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const appliedIds = useRef<Set<string>>(new Set());
 
-  // Mock holdings data - in real app, this would come from your backend
-  const [holdings, setHoldings] = useState<Holding[]>([
-    { id: 'btc', symbol: 'BTC', name: 'Bitcoin', icon: '₿', balance: 0.45, avgBuyPrice: 48500, currentPrice: 51234.56, value: 23055.55, pnl: 1230.55, pnlPercentage: 5.64, allocation: 45 },
-    { id: 'eth', symbol: 'ETH', name: 'Ethereum', icon: 'Ξ', balance: 5.2, avgBuyPrice: 2950, currentPrice: 3123.45, value: 16241.94, pnl: 901.94, pnlPercentage: 5.88, allocation: 31 },
-    { id: 'sol', symbol: 'SOL', name: 'Solana', icon: '◎', balance: 45, avgBuyPrice: 95.50, currentPrice: 102.34, value: 4605.30, pnl: 307.80, pnlPercentage: 7.16, allocation: 12 },
-    { id: 'usdc', symbol: 'USDC', name: 'USD Coin', icon: '$', balance: 12500, avgBuyPrice: 1.00, currentPrice: 1.00, value: 12500, pnl: 0, pnlPercentage: 0, allocation: 12 },
-  ]);
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    { id: '1', type: 'BUY', symbol: 'BTC', amount: 0.15, price: 49800, value: 7470, timestamp: '2026-02-19T10:30:00Z', status: 'completed', txHash: '0x7a4b...8f3e' },
-    { id: '2', type: 'BUY', symbol: 'ETH', amount: 1.5, price: 3050, value: 4575, timestamp: '2026-02-19T08:15:00Z', status: 'completed', txHash: '0x3c9d...2e1f' },
-    { id: '3', type: 'SELL', symbol: 'SOL', amount: 10, price: 98.50, value: 985, timestamp: '2026-02-18T22:45:00Z', status: 'completed', txHash: '0x8b2a...4d7c' },
-  ]);
+  // Function to process trades into holdings
+  const processHoldings = useCallback((trades: Transaction[]) => {
+    const assets: Record<string, { balance: number; costBasis: number }> = {};
+    
+    // Sort oldest first for correct cost basis calculation
+    const sortedTrades = [...trades].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-  // Update holdings with real-time prices
-  useEffect(() => {
-    setHoldings(prev => prev.map(holding => {
-      const priceData = prices[`${holding.symbol}/USD`];
-      if (priceData) {
-        const currentPrice = priceData.price;
-        const value = holding.balance * currentPrice;
-        const pnl = value - (holding.balance * holding.avgBuyPrice);
-        const pnlPercentage = ((currentPrice - holding.avgBuyPrice) / holding.avgBuyPrice) * 100;
+    sortedTrades.forEach(trade => {
+      const sym = trade.symbol;
+      if (!assets[sym]) assets[sym] = { balance: 0, costBasis: 0 };
+      
+      const current = assets[sym];
+      
+      if (trade.type === 'BUY') {
+        const totalCost = (current.balance * current.costBasis) + (trade.amount * trade.price);
+        const totalAmount = current.balance + trade.amount;
+        if (totalAmount > 0) {
+            current.costBasis = totalCost / totalAmount;
+        }
+        current.balance = totalAmount;
+      } else if (trade.type === 'SELL') {
+        current.balance = Math.max(0, current.balance - trade.amount);
+        // Cost basis per unit doesn't change on sell
+      }
+    });
+
+    // Convert to Holding objects
+    const newHoldings: Holding[] = Object.entries(assets)
+      .filter(([_, data]) => data.balance > 0)
+      .map(([symbol, data]) => {
+        const priceData = prices[`${symbol}/USD`];
+        const currentPrice = priceData?.price || 0;
+        const value = data.balance * currentPrice;
+        const pnl = value - (data.balance * data.costBasis);
+        const pnlPercentage = data.costBasis > 0 ? (pnl / (data.balance * data.costBasis)) * 100 : 0;
         
+        let name = symbol;
+        let icon = '🪙';
+        if (symbol === 'BTC') { name = 'Bitcoin'; icon = '₿'; }
+        if (symbol === 'ETH') { name = 'Ethereum'; icon = 'Ξ'; }
+        if (symbol === 'SOL') { name = 'Solana'; icon = '◎'; }
+
         return {
-          ...holding,
+          id: symbol.toLowerCase(),
+          symbol,
+          name,
+          icon,
+          balance: data.balance,
+          avgBuyPrice: data.costBasis,
           currentPrice,
           value,
           pnl,
           pnlPercentage,
+          allocation: 0 // Will calculate later
         };
-      }
-      return holding;
-    }));
-    setIsLoading(false);
+      });
+
+    // Calculate allocation percentage
+    const totalPortfolioValue = newHoldings.reduce((sum, h) => sum + h.value, 0);
+    newHoldings.forEach(h => {
+        h.allocation = totalPortfolioValue > 0 
+           ? parseFloat(((h.value / totalPortfolioValue) * 100).toFixed(2)) 
+           : 0;
+    });
+
+    return newHoldings;
   }, [prices]);
 
-  // Apply trades from localStorage (written by QuickTrade on each order)
-  const applyStoredTrades = useCallback(() => {
-    const stored: Transaction[] = JSON.parse(localStorage.getItem('portfolio_trades') || '[]');
-    const fresh = stored.filter(t => !appliedIds.current.has(t.id));
-    if (fresh.length === 0) return;
+  const fetchTrades = useCallback(async () => {
+    const targetAddress = user?.walletAddress || address;
+    
+    if (!targetAddress) {
+        setHoldings([]);
+        setTransactions([]);
+        setIsLoading(false);
+        return;
+    }
 
-    setTransactions(prev => [...fresh, ...prev]);
-    setHoldings(prev =>
-      prev.map(holding => {
-        const relevant = fresh.filter(t => t.symbol === holding.symbol);
-        if (relevant.length === 0) return holding;
-        let { balance, avgBuyPrice } = holding;
-        for (const trade of relevant) {
-          if (trade.type === 'BUY') {
-            const newBalance = balance + trade.amount;
-            avgBuyPrice = (balance * avgBuyPrice + trade.amount * trade.price) / newBalance;
-            balance = newBalance;
-          } else {
-            balance = Math.max(0, balance - trade.amount);
-          }
-        }
-        const value = balance * holding.currentPrice;
-        const pnl = value - balance * avgBuyPrice;
-        const pnlPercentage = avgBuyPrice > 0 ? ((holding.currentPrice - avgBuyPrice) / avgBuyPrice) * 100 : 0;
-        return { ...holding, balance, avgBuyPrice, value, pnl, pnlPercentage };
-      })
-    );
-    fresh.forEach(t => appliedIds.current.add(t.id));
-  }, []);
+    setIsLoading(true);
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${API_BASE}/api/trades/wallet/${targetAddress}`);
+      if (!res.ok) throw new Error('Failed to fetch trades');
+      
+      const data = await res.json();
+      if (data.success) {
+          // API returns { data: { trades: [...], pagination: {...} } }
+          const rawTrades = Array.isArray(data.data) ? data.data : (data.data?.trades || []);
 
+          const apiTrades: Transaction[] = rawTrades.map((t: any) => ({
+              id: t._id,
+              type: t.side,
+              symbol: t.symbol.split('/')[0], // "BTC/USD" -> "BTC"
+              amount: t.quantity,
+              price: t.price,
+              value: t.quantity * t.price,
+              timestamp: t.verifiedAt || t.createdAt,
+              status: 'completed' as const,
+              txHash: t.transactionHash
+          }));
+          
+          // Sort by newest first for display
+          setTransactions(apiTrades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+          
+          // Generate holdings from trade history
+          const calculatedHoldings = processHoldings(apiTrades);
+          setHoldings(calculatedHoldings);
+      }
+    } catch (err) {
+      console.error('Error fetching portfolio:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.walletAddress, address, processHoldings]);
+
+  // Fetch real trades from API
   useEffect(() => {
-    applyStoredTrades();
-    window.addEventListener('portfolio_updated', applyStoredTrades);
-    return () => window.removeEventListener('portfolio_updated', applyStoredTrades);
-  }, [applyStoredTrades]);
+    fetchTrades();
+    // Listen for new trades
+    const updateHandler = () => fetchTrades();
+    window.addEventListener('portfolio_updated', updateHandler);
+    return () => window.removeEventListener('portfolio_updated', updateHandler);
+  }, [fetchTrades]);
+
+  const handleManualRefresh = () => {
+    fetchTrades();
+    refreshBalance();
+  };
+
+
+
 
   const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
-  const totalPnl = holdings.reduce((sum, h) => sum + h.pnl, 0);
-  const totalPnlPercentage = (totalPnl / (totalValue - totalPnl)) * 100;
+  const totalCost = holdings.reduce((sum, h) => sum + (h.balance * h.avgBuyPrice), 0);
+  const totalPnl = totalValue - totalCost;
+  const totalPnlPercentage = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
 
   const chartData = [40, 65, 45, 70, 55, 80, 65, 90, 75, 85, 70, 95];
 
@@ -162,8 +237,12 @@ export default function PortfolioPage() {
                 <Eye className="w-5 h-5 text-slate-400 group-hover:text-white" />
               }
             </button>
-            <button className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all group">
-              <RefreshCw className={`w-5 h-5 text-slate-400 group-hover:text-white ${!isConnected ? 'animate-spin' : ''}`} />
+            <button 
+              onClick={handleManualRefresh}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all group"
+              title="Refresh Portfolio"
+            >
+              <RefreshCw className={`w-5 h-5 text-slate-400 group-hover:text-white ${isLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>

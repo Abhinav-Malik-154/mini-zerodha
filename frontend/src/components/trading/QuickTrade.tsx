@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRealTimeData } from '@/hooks/useRealTimeData';
+import { useAuth } from '@/context/AuthProvider';
+import { useWallet } from '@/context/WalletProvider'; // Fix: Import useWallet
 
 const SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD'] as const;
 type Symbol = typeof SYMBOLS[number];
@@ -58,6 +60,8 @@ function saveTrade(
 
 export default function QuickTrade() {
   const { prices } = useRealTimeData();
+  const { token, logout } = useAuth(); // Fix: Use token from context
+  const { refreshBalance } = useWallet(); // Fix: Get refreshBalance
   const [cards, setCards] = useState<Record<Symbol, CardState>>({
     'BTC/USD': defaultCard(),
     'ETH/USD': defaultCard(),
@@ -105,18 +109,49 @@ export default function QuickTrade() {
 
     update(symbol, { status: 'loading' });
     const livePrice = prices[symbol]?.price ?? 0;
+    const ethPrice = prices['ETH/USD']?.price ?? 3000;
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      // Fix #16: await the backend call and surface errors properly
+      // BUY: User pays ETH from wallet (cost = qty * assetPrice / ethPrice)
+      if (card.side === 'BUY') {
+        const costInEth = (qty * livePrice) / ethPrice;
+        update(symbol, { message: `Confirm ${costInEth.toFixed(4)} ETH payment in wallet...` });
+        const eth = (window as any).ethereum;
+        if (!eth) throw new Error('No wallet found');
+
+        const accounts = await eth.request({ method: 'eth_accounts' });
+        const weiValue = '0x' + BigInt(Math.round(costInEth * 1e18)).toString(16);
+
+        await eth.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: accounts[0],
+            to: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', // Anvil treasury
+            value: weiValue
+          }]
+        });
+        update(symbol, { message: 'Payment confirmed. Verifying trade...' });
+      }
+
+      // SELL: No wallet popup needed — backend sends ETH proceeds to user after verification
+      if (card.side === 'SELL') {
+        update(symbol, { message: 'Verifying trade...' });
+      }
+
       const res = await fetch(`${API_BASE}/api/trades/verify`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ symbol, side: card.side, quantity: qty, price: livePrice }),
+        body: JSON.stringify({ symbol, side: card.side, quantity: qty, price: livePrice, ethPrice }),
       });
 
+      if (res.status === 401) { // Fix: Handle token expiration
+        update(symbol, { status: 'error', message: 'Session expired. Please reconnect wallet.' });
+        logout(); // Force logout
+        return;
+      }
+      
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
@@ -129,6 +164,10 @@ export default function QuickTrade() {
       // Fix #15: use real transaction hash returned by backend
       const realTxHash: string = data?.data?.transactionHash || '0xpending';
       saveTrade(symbol, card.side, qty, livePrice, realTxHash);
+
+      // Trigger UI updates
+      window.dispatchEvent(new Event('portfolio_updated')); 
+      refreshBalance();
 
       update(symbol, {
         status: 'success',

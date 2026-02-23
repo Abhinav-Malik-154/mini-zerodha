@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRealTimeData } from '@/hooks/useRealTimeData';
+import { useAuth } from '@/context/AuthProvider';
+import { useWallet } from '@/context/WalletProvider'; // Fix: Import useWallet
 
 const SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD'] as const;
 type Symbol = typeof SYMBOLS[number];
@@ -11,6 +13,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 const TradeForm: React.FC = () => {
   const { prices } = useRealTimeData();
+  const { token, logout } = useAuth();
+  const { refreshBalance } = useWallet(); // Fix: Get refreshBalance
   const [symbol, setSymbol] = useState<Symbol>('BTC/USD');
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
@@ -35,30 +39,87 @@ const TradeForm: React.FC = () => {
       setMessage('Please fill in all required fields.');
       return;
     }
-    setStatus('loading');
+    const priceVal = orderType === 'MARKET' ? livePrice : parseFloat(price);
+    const qtyVal = parseFloat(quantity);
+
+    if (!isFinite(qtyVal) || qtyVal <= 0) {
+      setStatus('error');
+      setMessage('Quantity must be positive');
+      return;
+    }
+
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const eth = typeof window !== 'undefined' ? (window as any).ethereum : null;
+      const ethPrice = prices['ETH/USD']?.price ?? 3000;
+
+      // BUY: User pays ETH from wallet (cost = qty * assetPrice / ethPrice)
+      if (side === 'BUY' && eth) {
+        setStatus('loading');
+        const costInEth = (qtyVal * (priceVal ?? 0)) / ethPrice;
+        setMessage(`Confirm ${costInEth.toFixed(4)} ETH payment in wallet...`);
+
+        try {
+          const accounts = await eth.request({ method: 'eth_accounts' });
+          const weiValue = '0x' + BigInt(Math.round(costInEth * 1e18)).toString(16);
+          await eth.request({
+            method: 'eth_sendTransaction',
+            params: [{
+              from: accounts[0],
+              to: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', // Anvil treasury
+              value: weiValue,
+            }],
+          });
+          setMessage('Payment confirmed. Verifying trade...');
+        } catch (txErr: any) {
+          if (txErr.code === 4001) throw new Error('Transaction rejected by user');
+          throw new Error('ETH payment failed');
+        }
+      }
+
+      // SELL: No wallet popup — backend sends ETH proceeds to user
+      setStatus('loading');
+      setMessage('Verifying trade...');
+
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
+
       const res = await fetch(`${API_BASE}/api/trades/verify`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
           symbol,
           side,
-          quantity: parseFloat(quantity),
-          price: orderType === 'MARKET' ? livePrice : parseFloat(price),
+          quantity: qtyVal,
+          price: priceVal,
+          ethPrice,
         }),
       });
-      if (!res.ok) throw new Error('Trade failed');
+
+      if (res.status === 401) { // Fix: Handle token expiration
+        setStatus('error');
+        setMessage('Session expired. Please reconnect wallet.');
+        logout(); // Force logout
+        return;
+      }
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Trade failed');
+      }
+      
       setStatus('success');
       setMessage(`${side} order for ${quantity} ${symbol} placed!`);
+      
+      // Update UI: Refresh portfolio and Wallet Balance
+      window.dispatchEvent(new Event('portfolio_updated')); 
+      refreshBalance(); 
+
       setQuantity('');
       setPrice('');
       setTimeout(() => setStatus('idle'), 3000);
-    } catch {
+    } catch (err: any) {
       setStatus('error');
-      setMessage('Failed to place order. Please try again.');
+      setMessage(err.message || 'Failed to place order. Please try again.');
       setTimeout(() => setStatus('idle'), 3000);
     }
   };

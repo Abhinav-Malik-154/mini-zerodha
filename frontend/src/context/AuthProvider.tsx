@@ -35,10 +35,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+  useEffect(() => {
+    // Attempt to fetch user profile if token exists
+    const fetchUser = async () => {
+      if (token && !user) {
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/me`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setUser(data.user);
+          } else {
+             // Token invalid
+             logout();
+          }
+        } catch (err) {
+          console.error('Failed to fetch user', err);
+        }
+      }
+    };
+    fetchUser();
+  }, [token]);
+
   const login = async () => {
     if (!address || !isConnected) return;
     try {
-      const message = `Sign this message to log in (address: ${address})`;
+      // 1. Get nonce from backend (prevents replay attacks)
+      const nonceRes = await fetch(`${API_BASE}/api/auth/nonce/${address}`);
+      const nonceData = await nonceRes.json();
+      
+      if (!nonceRes.ok || !nonceData.nonce) {
+        console.error('Nonce fetch error:', nonceData);
+        throw new Error(nonceData.error || 'Failed to get nonce from server');
+      }
+
+      const message = `Sign this message to log in. Nonce: ${nonceData.nonce}`;
+
       // Fix #11: check for wallet provider — works for MetaMask, Coinbase Wallet, etc.
       // WalletConnect does NOT inject window.ethereum — guard against that.
       const eth = typeof window !== 'undefined' ? (window as any).ethereum : null;
@@ -46,15 +79,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('No Web3 wallet detected. Install MetaMask or use WalletConnect.');
         return;
       }
+      
       const signature = await eth.request({
         method: 'personal_sign',
         params: [message, address]
       });
 
+      // 2. Submit signature for verification
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address, message, signature })
+        body: JSON.stringify({ address, signature })
       });
       const data = await res.json();
       if (data.token) {

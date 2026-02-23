@@ -40,7 +40,7 @@ contract InteractScript is Script {
         console.log("Quantity:  ", quantity);
         console.log("TradeHash: ", vm.toString(tradeHash));
 
-        verifier.verifyTrade(tradeHash);
+        verifier.verifyTrade(tradeHash, user);
         console.log("Trade verified on-chain!");
 
         TradeVerifier.TradeProof memory proof = verifier.getTradeProof(tradeHash);

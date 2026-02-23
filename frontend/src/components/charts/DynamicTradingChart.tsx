@@ -24,7 +24,7 @@ export default function DynamicTradingChart() {
   const volumeSeriesRef = useRef<any>(null);
   
   const { prices, isConnected } = useRealTimeData();
-  const { selectedSymbol, availableSymbols } = useSymbol();
+  const { selectedSymbol, availableSymbols, setSelectedSymbol } = useSymbol();
   
   const [timeframe, setTimeframe] = useState<TimeframeType>('24H');
   const [chartData, setChartData] = useState<ChartData[]>([]);
@@ -297,7 +297,7 @@ export default function DynamicTradingChart() {
           <h2 className="text-xl font-semibold text-white">Chart</h2>
           <select
             value={selectedSymbol}
-            onChange={(e) => useSymbol().setSelectedSymbol(e.target.value as any)}
+            onChange={(e) => setSelectedSymbol(e.target.value as any)}
             className="bg-slate-700/50 text-white rounded-lg px-3 py-1 text-sm border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
           >
             {availableSymbols.map(symbol => (

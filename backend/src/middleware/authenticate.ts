@@ -20,7 +20,7 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
 
   const token = parts[1];
   try {
-    const secret = process.env.JWT_SECRET || 'default_secret';
+    const secret = process.env.JWT_SECRET!;
     const payload = jwt.verify(token, secret);
     req.user = payload;
     next();

@@ -94,47 +94,50 @@ contract TradeVerifier is Ownable, ReentrancyGuard, Pausable {
 
     /// @notice Verifies a single trade hash and stores its proof on-chain.
     /// @param tradeHash keccak256(abi.encode(symbol, price, qty, side, trader, timestamp))
-    function verifyTrade(bytes32 tradeHash) external nonReentrant whenNotPaused {
+    /// @param trader    The address of the user who performed the trade
+    function verifyTrade(bytes32 tradeHash, address trader) external onlyOwner nonReentrant whenNotPaused {
         if (tradeHash == bytes32(0)) revert InvalidTradeHash();
         if (proofs[tradeHash].exists) revert TradeAlreadyVerified();
+        if (trader == address(0)) revert("Invalid trader address");
         
-        if (!_isKnownUser[msg.sender]) {
-            _isKnownUser[msg.sender] = true;
+        if (!_isKnownUser[trader]) {
+            _isKnownUser[trader] = true;
             totalUniqueUsers++;
         }
         
         proofs[tradeHash] = TradeProof({
             tradeHash:    tradeHash,
             timestamp:    block.timestamp,
-            trader:       msg.sender,
+            trader:       trader,
             blockNumber:  block.number,
             previousHash: lastTradeHash,
             exists:       true
         });
         
-        userTrades[msg.sender].push(tradeHash);
-        userTradeCount[msg.sender]++;
+        userTrades[trader].push(tradeHash);
+        userTradeCount[trader]++;
         lastTradeHash      = tradeHash;
         lastTradeTimestamp = block.timestamp;
         totalTrades++;
         
-        emit TradeVerified(tradeHash, msg.sender, block.timestamp);
+        emit TradeVerified(tradeHash, trader, block.timestamp);
     }
 
     // ─── Batch verification ───────────────────────────────────────────────────
 
-    /// @notice Verifies multiple trade hashes in a single transaction.
+    /// @notice Verifies multiple trade hashes for a single user in one transaction.
     /// @dev Skips zero-hashes and already-verified hashes silently.
     ///      Only counts hashes that were actually stored.
-    function batchVerify(bytes32[] calldata tradeHashes) external nonReentrant whenNotPaused {
+    function batchVerify(bytes32[] calldata tradeHashes, address trader) external onlyOwner nonReentrant whenNotPaused {
         if (tradeHashes.length == 0) revert NoTradesToVerify();
+        if (trader == address(0)) revert("Invalid trader address");
         
-        if (!_isKnownUser[msg.sender]) {
-            _isKnownUser[msg.sender] = true;
+        if (!_isKnownUser[trader]) {
+            _isKnownUser[trader] = true;
             totalUniqueUsers++;
         }
 
-        uint256 verified = 0;   // BUG FIX: was adding tradeHashes.length unconditionally
+        uint256 verified = 0;
         
         for (uint256 i = 0; i < tradeHashes.length;) {
             bytes32 h = tradeHashes[i];
@@ -143,12 +146,12 @@ contract TradeVerifier is Ownable, ReentrancyGuard, Pausable {
                 proofs[h] = TradeProof({
                     tradeHash:    h,
                     timestamp:    block.timestamp,
-                    trader:       msg.sender,
+                    trader:       trader,
                     blockNumber:  block.number,
                     previousHash: lastTradeHash,
                     exists:       true
                 });
-                userTrades[msg.sender].push(h);
+                userTrades[trader].push(h);
                 lastTradeHash      = h;
                 lastTradeTimestamp = block.timestamp;
                 totalTrades++;
@@ -157,8 +160,8 @@ contract TradeVerifier is Ownable, ReentrancyGuard, Pausable {
             unchecked { ++i; }
         }
         
-        userTradeCount[msg.sender] += verified;
-        emit TradeBatchVerified(tradeHashes, msg.sender);
+        userTradeCount[trader] += verified;
+        emit TradeBatchVerified(tradeHashes, trader);
     }
     
     // ─── View helpers ─────────────────────────────────────────────────────────

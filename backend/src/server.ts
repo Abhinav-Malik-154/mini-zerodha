@@ -6,14 +6,16 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import tradeRoutes from './routes/trade.routes';
 import authRoutes from './routes/auth.routes';
+import faucetRoutes from './routes/faucet.routes';
 import { connectDatabase } from './services/database.service';
 import { WebSocketService } from './services/websocket.service';
 
 dotenv.config();
 
-// Fail loudly if JWT_SECRET is missing (tokens would be signed with 'default_secret')
+// Fail loudly if JWT_SECRET is missing
 if (!process.env.JWT_SECRET) {
-  console.error('❌  WARNING: JWT_SECRET is not set in .env — using insecure default. Set it before deploying.');
+  console.error('❌  FATAL ERROR: JWT_SECRET is not set in .env. Exiting.');
+  process.exit(1);
 }
 
 const app = express();
@@ -34,12 +36,12 @@ app.use(express.json());
 
 // Fix #9: rate limiting
 const authLimiter = rateLimit({
-  windowMs: 60_000, max: 10,
+  windowMs: 60_000, max: 100, // Increased for dev/testing
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, error: 'Too many requests, slow down.' }
 });
 const tradeLimiter = rateLimit({
-  windowMs: 60_000, max: 30,
+  windowMs: 60_000, max: 200, // Increased for dev/testing
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, error: 'Too many requests, slow down.' }
 });
@@ -50,6 +52,7 @@ app.set('wsService', wsService);
 // Routes (rate limiters applied before route handlers)
 app.use('/api/auth',   authLimiter,  authRoutes);
 app.use('/api/trades', tradeLimiter, tradeRoutes);
+app.use('/api/faucet', faucetRoutes); // No rate limit for now (dev)
 
 app.get('/', (_req, res) => {
   res.json({ message: 'Trading Platform API is running!' });

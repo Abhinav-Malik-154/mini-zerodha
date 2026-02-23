@@ -6,6 +6,7 @@ export interface IUser extends Document {
   email?: string;
   tradeCount: number;   // fix: was missing — $inc silently failed
   totalVolume: number;  // fix: was missing — $inc silently failed
+  nonce?: string;       // security fix: replay protection
   createdAt: Date;
   lastLogin: Date;
 }
@@ -16,6 +17,7 @@ const UserSchema: Schema = new Schema({
   email: { type: String },
   tradeCount:  { type: Number, default: 0 },
   totalVolume: { type: Number, default: 0 },
+  nonce:       { type: String }, // Store current login challenge
   createdAt: { type: Date, default: Date.now },
   lastLogin: { type: Date, default: Date.now }
 });

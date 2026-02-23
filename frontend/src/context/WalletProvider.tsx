@@ -22,6 +22,7 @@ interface WalletContextType {
   connect: () => Promise<void>;
   disconnect: () => void;
   changeAccount: () => Promise<void>;
+  refreshBalance: () => Promise<void>; // Add this
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -75,6 +76,10 @@ function InnerWalletProvider({ children }: WalletProviderProps) {
         setIsConnected(true);
         setAddress(accounts[0]);
         fetchBalance(accounts[0]);
+        // Persist address so portfolio page can use it before auth loads
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('user_address', accounts[0]);
+        }
       }
     },
     [fetchBalance]
@@ -102,9 +107,9 @@ function InnerWalletProvider({ children }: WalletProviderProps) {
     setIsConnected(false);
     setAddress('');
     setBalance('');
-    // remember user asked to disconnect so we don't auto-reconnect
     if (typeof window !== 'undefined') {
       localStorage.setItem('wallet_disconnected', '1');
+      localStorage.removeItem('user_address');
     }
   }, []);
 
@@ -122,6 +127,15 @@ function InnerWalletProvider({ children }: WalletProviderProps) {
       console.error('account change failed', err);
     }
   }, [handleAccountsChanged]);
+
+  const refreshBalance = useCallback(async () => {
+    if (address) {
+      // Poll a few times to catch block confirmations
+      setTimeout(() => fetchBalance(address), 500);
+      setTimeout(() => fetchBalance(address), 2000);
+      setTimeout(() => fetchBalance(address), 5000);
+    }
+  }, [address, fetchBalance]);
 
   useEffect(() => {
     const eth = useEthereum();
@@ -160,6 +174,7 @@ function InnerWalletProvider({ children }: WalletProviderProps) {
     connect,
     disconnect,
     changeAccount,
+    refreshBalance,  // Added
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

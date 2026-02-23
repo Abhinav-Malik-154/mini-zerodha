@@ -23,8 +23,8 @@ contract TradeVerifierTest is Test {
     
     // Test single verification
     function testVerifyTrade() public {
-        vm.prank(user1);
-        verifier.verifyTrade(trade1);
+        vm.prank(owner);
+        verifier.verifyTrade(trade1, user1);
         
         TradeVerifier.TradeProof memory proof = verifier.getTradeProof(trade1);
         assertTrue(proof.exists);
@@ -39,8 +39,8 @@ contract TradeVerifierTest is Test {
         trades[1] = trade2;
         trades[2] = trade3;
         
-        vm.prank(user1);
-        verifier.batchVerify(trades);
+        vm.prank(owner);
+        verifier.batchVerify(trades, user1);
         
         TradeVerifier.TradeProof memory proof1 = verifier.getTradeProof(trade1);
         TradeVerifier.TradeProof memory proof2 = verifier.getTradeProof(trade2);
@@ -54,19 +54,19 @@ contract TradeVerifierTest is Test {
     
     // FIXED: Test cannot verify same trade twice
     function test_RevertWhen_TradeAlreadyVerified() public {
-        vm.prank(user1);
-        verifier.verifyTrade(trade1);
+        vm.prank(owner);
+        verifier.verifyTrade(trade1, user1);
         
-        vm.prank(user1);
+        vm.prank(owner);
         vm.expectRevert(TradeVerifier.TradeAlreadyVerified.selector);
-        verifier.verifyTrade(trade1);
+        verifier.verifyTrade(trade1, user1);
     }
     
     // Test chain linking
     function testDeterministicOrdering() public {
-        vm.startPrank(user1);
-        verifier.verifyTrade(trade1);
-        verifier.verifyTrade(trade2);
+        vm.startPrank(owner);
+        verifier.verifyTrade(trade1, user1);
+        verifier.verifyTrade(trade2, user1);
         vm.stopPrank();
         
         TradeVerifier.TradeProof memory proof1 = verifier.getTradeProof(trade1);
@@ -78,9 +78,9 @@ contract TradeVerifierTest is Test {
     
     // Test pagination
     function testPagination() public {
-        vm.startPrank(user1);
+        vm.startPrank(owner);
         for(uint i = 0; i < 10; i++) {
-            verifier.verifyTrade(keccak256(abi.encodePacked(i)));
+            verifier.verifyTrade(keccak256(abi.encodePacked(i)), user1);
         }
         vm.stopPrank();
         
@@ -93,10 +93,10 @@ contract TradeVerifierTest is Test {
     
     // Test gas costs
     function testGasCosts() public {
-        vm.startPrank(user1);
+        vm.startPrank(owner);
         
         uint256 gasStart = gasleft();
-        verifier.verifyTrade(trade1);
+        verifier.verifyTrade(trade1, user1);
         uint256 singleGas = gasStart - gasleft();
         
         bytes32[] memory trades = new bytes32[](3);
@@ -105,7 +105,7 @@ contract TradeVerifierTest is Test {
         trades[2] = keccak256("c");
         
         gasStart = gasleft();
-        verifier.batchVerify(trades);
+        verifier.batchVerify(trades, user1);
         uint256 batchGas = gasStart - gasleft();
         
         console.log("Single verify gas:", singleGas);
@@ -118,12 +118,13 @@ contract TradeVerifierTest is Test {
     
     // Test owner can revoke
     function testRevokeTrade() public {
-        vm.prank(user1);
-        verifier.verifyTrade(trade1);
+        vm.prank(owner);
+        verifier.verifyTrade(trade1, user1);
         
         TradeVerifier.TradeProof memory proofBefore = verifier.getTradeProof(trade1);
         assertTrue(proofBefore.exists);
         
+        vm.prank(owner);
         verifier.revokeTrade(trade1);
         
         // getTradeProof now uses InvalidTradeHash custom error (not a string revert)
@@ -133,22 +134,21 @@ contract TradeVerifierTest is Test {
     
     // FIXED: Test non-owner cannot revoke
     function test_RevertWhen_NonOwnerRevokes() public {
-    vm.prank(user1);
-    verifier.verifyTrade(trade1);
-    
-    vm.prank(user2);
-    // This matches the actual OpenZeppelin v5+ error
-    vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user2));
-    verifier.revokeTrade(trade1);
+        vm.prank(owner);
+        verifier.verifyTrade(trade1, user1);
+        
+        vm.prank(user2);
+        // This matches the actual OpenZeppelin v5+ error
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, user2));
+        verifier.revokeTrade(trade1);
     }
     
     // Test multiple users
     function testMultipleUsers() public {
-        vm.prank(user1);
-        verifier.verifyTrade(trade1);
-        
-        vm.prank(user2);
-        verifier.verifyTrade(trade2);
+        vm.startPrank(owner);
+        verifier.verifyTrade(trade1, user1);
+        verifier.verifyTrade(trade2, user2);
+        vm.stopPrank();
         
         assertEq(verifier.getTradeCount(user1), 1);
         assertEq(verifier.getTradeCount(user2), 1);
@@ -157,8 +157,8 @@ contract TradeVerifierTest is Test {
     
     // Test stats function - FIXED
     function testStats() public {
-        vm.prank(user1);
-        verifier.verifyTrade(trade1);
+        vm.prank(owner);
+        verifier.verifyTrade(trade1, user1);
         
         (
             uint256 totalTrades,
@@ -171,8 +171,6 @@ contract TradeVerifierTest is Test {
         assertEq(lastHash, trade1);
         assertEq(totalUsers, 1);
         assertTrue(lastTimestamp > 0);
-        // BUG FIX verification: lastTimestamp should equal block.timestamp at time of trade,
-        // not always the current block.timestamp
         assertEq(lastTimestamp, block.timestamp);
     }
 
@@ -277,31 +275,31 @@ contract TradeVerifierTest is Test {
     // Fuzz: any non-zero hash can be individually verified
     function testFuzz_AnyHashVerifies(bytes32 h) public {
         vm.assume(h != bytes32(0));
-        vm.prank(user1);
-        verifier.verifyTrade(h);
+        vm.prank(owner);
+        verifier.verifyTrade(h, user1);
         assertTrue(verifier.getTradeProof(h).exists);
     }
 
     // Fuzz: zero hash always reverts (plain unit test — fuzz can't hit bytes32(0) reliably)
     function test_ZeroHashAlwaysReverts() public {
-        vm.prank(user1);
+        vm.prank(owner);
         vm.expectRevert(TradeVerifier.InvalidTradeHash.selector);
-        verifier.verifyTrade(bytes32(0));
+        verifier.verifyTrade(bytes32(0), user1);
     }
 
     // Test pause functionality
     function testPausePreventsVerification() public {
         verifier.pause();
-        vm.prank(user1);
+        vm.prank(owner);
         vm.expectRevert();  // Pausable: EnforcedPause
-        verifier.verifyTrade(trade1);
+        verifier.verifyTrade(trade1, user1);
     }
 
     function testUnpauseRestoresVerification() public {
         verifier.pause();
         verifier.unpause();
-        vm.prank(user1);
-        verifier.verifyTrade(trade1);
+        vm.prank(owner);
+        verifier.verifyTrade(trade1, user1);
         assertTrue(verifier.getTradeProof(trade1).exists);
     }
 
@@ -312,8 +310,8 @@ contract TradeVerifierTest is Test {
         trades[1] = bytes32(0); // should be skipped
         trades[2] = trade2;
 
-        vm.prank(user1);
-        verifier.batchVerify(trades);
+        vm.prank(owner);
+        verifier.batchVerify(trades, user1);
 
         // Only 2 real hashes stored, not 3
         assertEq(verifier.userTradeCount(user1), 2);

@@ -9,6 +9,7 @@ import {
   ArrowRightOnRectangleIcon,
   DocumentDuplicateIcon,
   StarIcon,
+  BanknotesIcon,
 } from '@heroicons/react/24/outline';
 import { Menu } from '@headlessui/react';
 import { useWallet } from '@/context/WalletProvider';
@@ -16,8 +17,32 @@ import { useAuth } from '@/context/AuthProvider';
 
 export default function ConnectButton() {
   const [mounted, setMounted] = useState(false);
+  const [faucetLoading, setFaucetLoading] = useState(false);
   const { address, balance, isConnected, connect, disconnect, changeAccount } = useWallet();
   const { login, token } = useAuth();
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+  const requestFaucet = async () => {
+    if (!address) return;
+    setFaucetLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/faucet/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`✅ Sent 5 ETH to ${address.slice(0,6)}...`);
+      } else {
+        alert('❌ Faucet failed: ' + data.error);
+      }
+    } catch (err) {
+      alert('❌ Faucet error');
+    } finally {
+      setFaucetLoading(false);
+    }
+  };
 
   // run login when wallet is newly connected and no token exists yet
   useEffect(() => {
@@ -89,6 +114,20 @@ export default function ConnectButton() {
               >
                 <ArrowPathIcon className="w-5 h-5" />
                 <span>Change account</span>
+              </button>
+            )}
+          </Menu.Item>
+          <Menu.Item>
+            {({ active }) => (
+              <button
+                onClick={requestFaucet}
+                disabled={faucetLoading}
+                className={`${
+                  active ? 'bg-slate-700/50' : ''
+                } w-full flex items-center gap-2 px-3 py-2 text-sm text-white`}
+              >
+                <BanknotesIcon className="w-5 h-5 text-green-400" />
+                <span>{faucetLoading ? 'Sending ETH...' : 'Get 5 Test ETH'}</span>
               </button>
             )}
           </Menu.Item>

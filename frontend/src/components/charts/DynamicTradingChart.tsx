@@ -377,7 +377,7 @@ export default function DynamicTradingChart() {
             </span>
           </div>
         </div>
-        <span className="text-xs text-slate-400">
+        <span className="text-xs text-slate-400" suppressHydrationWarning>
           Updated: {new Date().toLocaleTimeString()}
         </span>
       </div>

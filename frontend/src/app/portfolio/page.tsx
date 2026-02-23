@@ -436,7 +436,8 @@ export default function PortfolioPage() {
                       <td className="px-6 py-4 text-right text-white font-mono">${tx.price.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-white font-mono">${tx.value.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-slate-400">
-                        {new Date(tx.timestamp).toLocaleDateString()}
+                        <div>{new Date(tx.timestamp).toLocaleDateString()}</div>
+                        <div className="text-xs text-slate-500">{new Date(tx.timestamp).toLocaleTimeString()}</div>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <VerificationBadge verified={true} hash={tx.txHash} />

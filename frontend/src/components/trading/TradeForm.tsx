@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRealTimeData } from '@/hooks/useRealTimeData';
 import { useAuth } from '@/context/AuthProvider';
-import { useWallet } from '@/context/WalletProvider'; // Fix: Import useWallet
+import { useWallet } from '@/context/WalletProvider';
 
 const SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD'] as const;
 type Symbol = typeof SYMBOLS[number];
@@ -14,7 +14,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const TradeForm: React.FC = () => {
   const { prices } = useRealTimeData();
   const { token, logout } = useAuth();
-  const { refreshBalance } = useWallet(); // Fix: Get refreshBalance
+  const { refreshBalance } = useWallet();
   const [symbol, setSymbol] = useState<Symbol>('BTC/USD');
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
@@ -52,7 +52,7 @@ const TradeForm: React.FC = () => {
       const eth = typeof window !== 'undefined' ? (window as any).ethereum : null;
       const ethPrice = prices['ETH/USD']?.price ?? 3000;
 
-      // BUY: User pays ETH from wallet (cost = qty * assetPrice / ethPrice)
+      // BUY: user pays ETH from their wallet
       if (side === 'BUY' && eth) {
         setStatus('loading');
         const costInEth = (qtyVal * (priceVal ?? 0)) / ethPrice;
@@ -76,7 +76,7 @@ const TradeForm: React.FC = () => {
         }
       }
 
-      // SELL: No wallet popup — backend sends ETH proceeds to user
+      // SELL: backend sends ETH proceeds to user, no wallet popup needed
       setStatus('loading');
       setMessage('Verifying trade...');
 
@@ -95,10 +95,10 @@ const TradeForm: React.FC = () => {
         }),
       });
 
-      if (res.status === 401) { // Fix: Handle token expiration
+      if (res.status === 401) {
         setStatus('error');
         setMessage('Session expired. Please reconnect wallet.');
-        logout(); // Force logout
+        logout();
         return;
       }
 

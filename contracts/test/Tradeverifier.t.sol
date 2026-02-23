@@ -52,7 +52,7 @@ contract TradeVerifierTest is Test {
         assertEq(verifier.getTradeCount(user1), 3);
     }
     
-    // FIXED: Test cannot verify same trade twice
+    // can't verify the same hash twice
     function test_RevertWhen_TradeAlreadyVerified() public {
         vm.prank(owner);
         verifier.verifyTrade(trade1, user1);
@@ -127,12 +127,12 @@ contract TradeVerifierTest is Test {
         vm.prank(owner);
         verifier.revokeTrade(trade1);
         
-        // getTradeProof now uses InvalidTradeHash custom error (not a string revert)
+        // getTradeProof reverts with custom error after revoke
         vm.expectRevert(TradeVerifier.InvalidTradeHash.selector);
         verifier.getTradeProof(trade1);
     }
     
-    // FIXED: Test non-owner cannot revoke
+    // non-owner shouldn't be able to revoke
     function test_RevertWhen_NonOwnerRevokes() public {
         vm.prank(owner);
         verifier.verifyTrade(trade1, user1);
@@ -155,7 +155,6 @@ contract TradeVerifierTest is Test {
         assertEq(verifier.totalTrades(), 2);
     }
     
-    // Test stats function - FIXED
     function testStats() public {
         vm.prank(owner);
         verifier.verifyTrade(trade1, user1);
@@ -174,15 +173,14 @@ contract TradeVerifierTest is Test {
         assertEq(lastTimestamp, block.timestamp);
     }
 
-    // ─── Merkle root tests ────────────────────────────────────────────────────
+    // --- merkle tests ---
 
-    // Helper: build a 2-leaf Merkle tree manually for testing
-    // Leaf = keccak256(bytes.concat(keccak256(abi.encode(tradeHash))))  (OZ double-hash)
+    // helper: double-hash a leaf the same way the contract does
     function _merkleLeaf(bytes32 h) internal pure returns (bytes32) {
         return keccak256(bytes.concat(keccak256(abi.encode(h))));
     }
 
-    // Root of a 2-leaf tree: keccak256(abi.encodePacked(left, right)) sorted
+    // root of a simple 2-leaf tree (sorted pair hash)
     function _merkleRoot2(bytes32 a, bytes32 b) internal pure returns (bytes32) {
         (bytes32 left, bytes32 right) = a < b ? (a, b) : (b, a);
         return keccak256(abi.encodePacked(left, right));
@@ -303,7 +301,7 @@ contract TradeVerifierTest is Test {
         assertTrue(verifier.getTradeProof(trade1).exists);
     }
 
-    // Test batchVerify count fix — skipped hashes should NOT inflate count
+    // make sure skipped (zero) hashes don't inflate the trade count
     function testBatchVerifyCountIsAccurate() public {
         bytes32[] memory trades = new bytes32[](3);
         trades[0] = trade1;

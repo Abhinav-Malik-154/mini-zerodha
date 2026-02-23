@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ITrade extends Document {
   userId: string;
-  walletAddress?: string;  // fix: was missing, silently dropped by Mongoose
+  walletAddress?: string;
   symbol: string;
   side: 'BUY' | 'SELL';
   price: number;
@@ -15,7 +15,7 @@ export interface ITrade extends Document {
 
 const TradeSchema: Schema = new Schema({
   userId: { type: String, required: true, index: true },
-  walletAddress: { type: String, index: true },  // fix: add so it persists
+  walletAddress: { type: String, index: true },
   symbol: { type: String, required: true },
   side: { type: String, enum: ['BUY', 'SELL'], required: true },
   price: { type: Number, required: true },

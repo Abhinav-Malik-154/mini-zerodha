@@ -72,11 +72,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const message = `Sign this message to log in. Nonce: ${nonceData.nonce}`;
 
-      // Fix #11: check for wallet provider — works for MetaMask, Coinbase Wallet, etc.
-      // WalletConnect does NOT inject window.ethereum — guard against that.
+      // check for wallet provider (MetaMask, Coinbase Wallet, etc.)
       const eth = typeof window !== 'undefined' ? (window as any).ethereum : null;
       if (!eth) {
-        console.error('No Web3 wallet detected. Install MetaMask or use WalletConnect.');
+        console.error('No Web3 wallet detected');
         return;
       }
       
@@ -112,8 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Fix #12: clear stale JWT when MetaMask switches to a different address.
-  // Without this, wallet A's token is used while operating as wallet B.
+  // clear stale JWT when user switches MetaMask accounts
   const prevAddressRef = useRef<string>('');
   useEffect(() => {
     const prev = prevAddressRef.current;

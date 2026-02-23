@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRealTimeData } from '@/hooks/useRealTimeData';
 import { useAuth } from '@/context/AuthProvider';
-import { useWallet } from '@/context/WalletProvider'; // Fix: Import useWallet
+import { useWallet } from '@/context/WalletProvider';
 
 const SYMBOLS = ['BTC/USD', 'ETH/USD', 'SOL/USD'] as const;
 type Symbol = typeof SYMBOLS[number];
@@ -16,7 +16,6 @@ const SYMBOL_META: Record<Symbol, { icon: string; color: string; glow: string }>
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-// Fix #14: set NEXT_PUBLIC_EXPECTED_CHAIN_ID in .env.local (31337=Anvil, 1=mainnet, 137=Polygon)
 const EXPECTED_CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_EXPECTED_CHAIN_ID || '31337', 10);
 
 interface CardState {
@@ -40,7 +39,7 @@ function saveTrade(
   side: 'BUY' | 'SELL',
   amount: number,
   price: number,
-  txHash: string  // Fix #15: real hash from backend, not Math.random()
+  txHash: string
 ) {
   const trade = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -60,8 +59,8 @@ function saveTrade(
 
 export default function QuickTrade() {
   const { prices } = useRealTimeData();
-  const { token, logout } = useAuth(); // Fix: Use token from context
-  const { refreshBalance } = useWallet(); // Fix: Get refreshBalance
+  const { token, logout } = useAuth();
+  const { refreshBalance } = useWallet();
   const [cards, setCards] = useState<Record<Symbol, CardState>>({
     'BTC/USD': defaultCard(),
     'ETH/USD': defaultCard(),
@@ -90,7 +89,7 @@ export default function QuickTrade() {
       return;
     }
 
-    // Fix #14: validate chain ID before submitting
+    // make sure we're on the right chain before submitting
     try {
       const eth = typeof window !== 'undefined' ? (window as any).ethereum : null;
       if (eth) {
@@ -114,7 +113,7 @@ export default function QuickTrade() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      // BUY: User pays ETH from wallet (cost = qty * assetPrice / ethPrice)
+      // BUY: send ETH payment from user's wallet to treasury
       if (card.side === 'BUY') {
         const costInEth = (qty * livePrice) / ethPrice;
         update(symbol, { message: `Confirm ${costInEth.toFixed(4)} ETH payment in wallet...` });
@@ -135,7 +134,7 @@ export default function QuickTrade() {
         update(symbol, { message: 'Payment confirmed. Verifying trade...' });
       }
 
-      // SELL: No wallet popup needed — backend sends ETH proceeds to user after verification
+      // SELL: backend will send ETH proceeds after verification
       if (card.side === 'SELL') {
         update(symbol, { message: 'Verifying trade...' });
       }
@@ -146,9 +145,9 @@ export default function QuickTrade() {
         body: JSON.stringify({ symbol, side: card.side, quantity: qty, price: livePrice, ethPrice }),
       });
 
-      if (res.status === 401) { // Fix: Handle token expiration
+      if (res.status === 401) {
         update(symbol, { status: 'error', message: 'Session expired. Please reconnect wallet.' });
-        logout(); // Force logout
+        logout();
         return;
       }
       
@@ -161,7 +160,6 @@ export default function QuickTrade() {
         return;
       }
 
-      // Fix #15: use real transaction hash returned by backend
       const realTxHash: string = data?.data?.transactionHash || '0xpending';
       saveTrade(symbol, card.side, qty, livePrice, realTxHash);
 

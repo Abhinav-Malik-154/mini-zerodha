@@ -12,7 +12,7 @@ router.post('/request', async (req: Request, res: Response) => {
   }
 
   try {
-    console.log(`🚰 Faucet request for ${address}`);
+    console.log(`Faucet request for ${address}`);
     // Send 5 ETH
     const txHash = await blockchainService.fundWallet(address, '5.0');
     return res.json({ success: true, txHash, message: 'Sent 5.0 ETH to your wallet!' });

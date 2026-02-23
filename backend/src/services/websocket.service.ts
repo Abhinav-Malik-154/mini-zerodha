@@ -18,7 +18,7 @@ export class WebSocketService {
       transports: ['websocket', 'polling']
     });
 
-    console.log('🔌 WebSocket server initializing...');
+    console.log('WebSocket server initializing...');
     this.setupEventHandlers();
     this.connectToBinance();
     this.startPriceFeed();
@@ -26,11 +26,11 @@ export class WebSocketService {
 
   private setupEventHandlers() {
     this.io.on('connection', (socket) => {
-      console.log('🔌 New client connected:', socket.id);
+      console.log('New client connected:', socket.id);
 
       socket.on('subscribe', ({ symbol, userId }) => {
         socket.join(`market:${symbol}`);
-        console.log(`📊 Client ${socket.id} subscribed to ${symbol}`);
+        console.log(`Client ${socket.id} subscribed to ${symbol}`);
         
         if (userId) {
           if (!this.activeUsers.has(symbol)) {
@@ -44,7 +44,7 @@ export class WebSocketService {
 
       socket.on('unsubscribe', ({ symbol, userId }) => {
         socket.leave(`market:${symbol}`);
-        console.log(`📊 Client ${socket.id} unsubscribed from ${symbol}`);
+        console.log(`Client ${socket.id} unsubscribed from ${symbol}`);
         
         if (userId && this.activeUsers.has(symbol)) {
           this.activeUsers.get(symbol)?.delete(userId);
@@ -52,7 +52,7 @@ export class WebSocketService {
       });
 
       socket.on('disconnect', () => {
-        console.log('❌ Client disconnected:', socket.id);
+        console.log('Client disconnected:', socket.id);
       });
     });
   }
@@ -63,7 +63,7 @@ export class WebSocketService {
       this.binanceWs = new WebSocket('wss://stream.binance.com:9443/ws');
 
       this.binanceWs.on('open', () => {
-        console.log('✅ Connected to Binance WebSocket');
+        console.log('Connected to Binance WebSocket');
         
         // Subscribe to BTC, ETH, SOL streams
         const subscribeMsg = {
@@ -131,16 +131,16 @@ export class WebSocketService {
       });
 
       this.binanceWs.on('error', (error: Error) => {
-        console.error('❌ Binance WebSocket error:', error);
+        console.error('Binance WebSocket error:', error);
       });
 
       this.binanceWs.on('close', () => {
-        console.log('🔌 Binance WebSocket closed, reconnecting...');
+        console.log('Binance WebSocket closed, reconnecting...');
         setTimeout(() => this.connectToBinance(), 5000);
       });
 
     } catch (error) {
-      console.error('❌ Failed to connect to Binance:', error);
+      console.error('Failed to connect to Binance:', error);
     }
   }
 

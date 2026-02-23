@@ -22,7 +22,7 @@ interface WalletContextType {
   connect: () => Promise<void>;
   disconnect: () => void;
   changeAccount: () => Promise<void>;
-  refreshBalance: () => Promise<void>; // Add this
+  refreshBalance: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -76,7 +76,7 @@ function InnerWalletProvider({ children }: WalletProviderProps) {
         setIsConnected(true);
         setAddress(accounts[0]);
         fetchBalance(accounts[0]);
-        // Persist address so portfolio page can use it before auth loads
+        // save address so portfolio page can use it even before auth loads
         if (typeof window !== 'undefined') {
           localStorage.setItem('user_address', accounts[0]);
         }
@@ -174,7 +174,7 @@ function InnerWalletProvider({ children }: WalletProviderProps) {
     connect,
     disconnect,
     changeAccount,
-    refreshBalance,  // Added
+    refreshBalance,
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

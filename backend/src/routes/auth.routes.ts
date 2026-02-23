@@ -2,11 +2,11 @@ import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.model';
 import { ethers } from 'ethers';
-import { authenticate } from '../middleware/authenticate'; // Fix: Import middleware
+import { authenticate } from '../middleware/authenticate';
 
 const router = Router();
 
-// Fix #1: Generate a nonce for login (Replay Attack Prevention)
+// generate a nonce the user will sign to prove wallet ownership
 router.get('/nonce/:address', async (req: Request, res: Response) => {
   const { address } = req.params;
   if (!address) {
@@ -19,7 +19,7 @@ router.get('/nonce/:address', async (req: Request, res: Response) => {
     const nonce = Math.floor(Math.random() * 1000000).toString();
     console.log(`Generating nonce ${nonce} for ${address}`);
     
-    // Save specific nonce to user record
+    // save nonce to user so we can check it on login
     const user = await User.findOneAndUpdate(
       { walletAddress: address },
       { $set: { nonce } },
@@ -34,7 +34,8 @@ router.get('/nonce/:address', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to generate nonce: ' + err.message });
   }
 });
-// Profile endpoint to fetch current user data
+
+// get the current user's profile
 router.get('/me', authenticate, async (req: Request, res: Response) => {
   try {
     const walletAddress = (req as any).user.walletAddress;
@@ -58,7 +59,8 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
-// login via wallet signature
+
+// wallet signature login
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { address, signature } = req.body;
@@ -66,27 +68,27 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'address and signature are required' });
     }
 
-    // 1. Fetch user to get the expected nonce
+    // 1. look up the nonce we generated earlier
     const user = await User.findOne({ walletAddress: address });
     if (!user || !user.nonce) {
       return res.status(400).json({ success: false, error: 'Nonce not generated. Call /auth/nonce/:address first.' });
     }
 
-    // 2. Reconstruct the message the user SHOULD have signed
+    // 2. rebuild the message they should have signed
     const expectedMessage = `Sign this message to log in. Nonce: ${user.nonce}`;
 
-    // 3. Verify signature against that specific message
+    // 3. ecrecover and compare
     const signer = ethers.verifyMessage(expectedMessage, signature);
     if (signer.toLowerCase() !== address.toLowerCase()) {
       return res.status(401).json({ success: false, error: 'Signature mismatch' });
     }
 
-    // 4. Update user: Clear nonce (so it can't be reused) & set lastLogin
+    // 4. clear nonce so it can't be replayed, update lastLogin
     user.nonce = undefined; 
     user.lastLogin = new Date();
     await user.save();
 
-    // 5. Issue JWT
+    // 5. issue JWT
     const secret = process.env.JWT_SECRET!;
     const token = jwt.sign({ 
       userId: user._id,

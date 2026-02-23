@@ -12,9 +12,8 @@ import { WebSocketService } from './services/websocket.service';
 
 dotenv.config();
 
-// Fail loudly if JWT_SECRET is missing
 if (!process.env.JWT_SECRET) {
-  console.error('❌  FATAL ERROR: JWT_SECRET is not set in .env. Exiting.');
+  console.error('FATAL: JWT_SECRET is not set in .env');
   process.exit(1);
 }
 
@@ -27,21 +26,20 @@ const wsService = new WebSocketService(server);
 
 // Security middleware
 app.use(helmet());
-// Fix #7: restrict CORS to known frontend origin only
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
 }));
 app.use(express.json());
 
-// Fix #9: rate limiting
+// rate limiting
 const authLimiter = rateLimit({
-  windowMs: 60_000, max: 100, // Increased for dev/testing
+  windowMs: 60_000, max: 100,
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, error: 'Too many requests, slow down.' }
 });
 const tradeLimiter = rateLimit({
-  windowMs: 60_000, max: 200, // Increased for dev/testing
+  windowMs: 60_000, max: 200,
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, error: 'Too many requests, slow down.' }
 });
@@ -67,11 +65,11 @@ const startServer = async () => {
   try {
     await connectDatabase();
     server.listen(PORT, () => {
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
-      console.log(`🔌 WebSocket server ready for real-time data`);
+      console.log(`Server running on http://localhost:${PORT}`);
+      console.log('WebSocket server ready');
     });
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    console.error('Failed to start server:', error);
     process.exit(1);
   }
 };

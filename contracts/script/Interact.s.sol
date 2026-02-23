@@ -5,9 +5,8 @@ pragma solidity ^0.8.13;
 import "forge-std/Script.sol";
 import "../src/TradeVerifier.sol";
 
-/// @notice Demonstrates single trade verification AND Merkle batch commit.
-///         Run with:
-///   forge script script/Interact.s.sol --rpc-url $RPC_URL --broadcast
+// Quick script to test single verify + merkle batch on a running chain.
+// forge script script/Interact.s.sol --rpc-url $RPC_URL --broadcast
 contract InteractScript is Script {
     function run() external {
         address contractAddress = vm.envAddress("CONTRACT_ADDRESS");
@@ -18,7 +17,7 @@ contract InteractScript is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // ── 1. Single trade verification ────────────────────────────────────
+        // 1. verify a single trade
         string memory symbol   = "BTCUSD";
         uint256 price          = 67000;
         uint256 quantity       = 1e17; // 0.1 BTC in smallest unit

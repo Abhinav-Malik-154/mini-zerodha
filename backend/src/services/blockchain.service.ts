@@ -3,7 +3,7 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-// Import your contract ABI (Forge output contains abi as a nested key)
+// import the ABI (forge puts it in a nested .abi key)
 const contractJSON = require('../abis/TradeVerifier.json');
 const contractABI = contractJSON.abi || contractJSON;
 
@@ -13,23 +13,21 @@ export class BlockchainService {
   private contract: ethers.Contract;
   
   constructor() {
-    // Check if environment variables exist
     const rpcUrl = process.env.RPC_URL;
     const privateKey = process.env.PRIVATE_KEY;
     const contractAddress = process.env.CONTRACT_ADDRESS;
     
     if (!rpcUrl) {
-      throw new Error('❌ RPC_URL not found in environment variables');
+      throw new Error('RPC_URL not found in .env');
     }
     if (!privateKey) {
-      throw new Error('❌ PRIVATE_KEY not found in environment variables');
+      throw new Error('PRIVATE_KEY not found in .env');
     }
     if (!contractAddress) {
-      throw new Error('❌ CONTRACT_ADDRESS not found in environment variables');
+      throw new Error('CONTRACT_ADDRESS not found in .env');
     }
     
     try {
-      // Connect to your local Anvil instance
       this.provider = new ethers.JsonRpcProvider(rpcUrl);
       this.wallet = new ethers.Wallet(privateKey, this.provider);
       this.contract = new ethers.Contract(
@@ -38,27 +36,26 @@ export class BlockchainService {
         this.wallet
       );
       
-      console.log('✅ Blockchain Service initialized');
-      console.log(`📄 Contract Address: ${contractAddress}`);
-      console.log(`🌐 RPC URL: ${rpcUrl}`);
-      console.log(`👤 Wallet Address: ${this.wallet.address}`);
+      console.log('Blockchain service initialized');
+      console.log(`Contract: ${contractAddress}`);
+      console.log(`RPC: ${rpcUrl}`);
+      console.log(`Wallet: ${this.wallet.address}`);
     } catch (error) {
-      console.error('❌ Failed to initialize blockchain service:', error);
+      console.error('Failed to init blockchain service:', error);
       throw error;
     }
   }
   
-  // Verify a trade on-chain
   async verifyTrade(tradeData: any): Promise<any> {
     try {
       if (!tradeData || !tradeData.symbol || !tradeData.price || !tradeData.quantity) {
-        throw new Error('❌ Invalid trade data: missing required fields');
+        throw new Error('Invalid trade data: missing required fields');
       }
 
       const trader = tradeData.walletAddress || ethers.ZeroAddress;
       
-      // Deterministic ABI-compatible hash — matches keccak256(abi.encode(...)) in Solidity
-      // Field order MUST match Interact.s.sol: 'trade', timestamp, trader, keccak256(symbol), price, quantity
+      // deterministic hash matching the solidity side
+      // field order must match Interact.s.sol: 'trade', timestamp, trader, keccak256(symbol), price, quantity
       const tradeHash = ethers.keccak256(
         ethers.AbiCoder.defaultAbiCoder().encode(
           ['string', 'uint256', 'address', 'bytes32', 'uint256', 'uint256'],
@@ -73,9 +70,8 @@ export class BlockchainService {
         )
       );
 
-      console.log(`🔗 Verifying trade on-chain: ${tradeHash} for trader: ${trader}`);
+      console.log(`Verifying trade on-chain: ${tradeHash} for ${trader}`);
       
-      // Fix: call verifyTrade with BOTH hash and trader address
       const tx = await this.contract.verifyTrade(tradeHash, trader);
       const receipt = await tx.wait();
 
@@ -87,12 +83,11 @@ export class BlockchainService {
         gasUsed: receipt.gasUsed.toString()
       };
     } catch (error) {
-      console.error('❌ Blockchain verification failed:', error);
+      console.error('Blockchain verification failed:', error);
       throw error;
     }
   }
   
-  // Get trade proof from blockchain
   async getTradeProof(tradeHash: string): Promise<any> {
     try {
       const proof = await this.contract.getTradeProof(tradeHash);
@@ -104,19 +99,19 @@ export class BlockchainService {
         previousHash: proof.previousHash
       };
     } catch (error) {
-      console.error('❌ Failed to get trade proof:', error);
+      console.error('Failed to get trade proof:', error);
       throw error;
     }
   }
 
-  // Faucet: Send ETH to a specific address (for dev/testing only)
+  // send ETH to an address (used for sell proceeds and dev faucet)
   async fundWallet(address: string, amountEth: string = '5.0'): Promise<string> {
     try {
       if (!this.wallet) throw new Error('Wallet not initialized');
       
-      // Use 'pending' to account for in-flight verifyTrade TX that may not be mined yet
+      // use 'pending' nonce to avoid conflicts with in-flight txs
       const nonce = await this.provider.getTransactionCount(this.wallet.address, 'pending');
-      console.log(`💸 Funding wallet ${address} with nonce ${nonce}`);
+      console.log(`Funding ${address} with nonce ${nonce}`);
 
       const tx = await this.wallet.sendTransaction({
         to: address,
@@ -126,12 +121,11 @@ export class BlockchainService {
       await tx.wait();
       return tx.hash;
     } catch (error) {
-      console.error('❌ Faucet failed:', error);
+      console.error('Fund wallet failed:', error);
       throw error;
     }
   }
   
-  // Check if trade exists (simple version)
   async isTradeVerified(tradeHash: string): Promise<boolean> {
     try {
       const proof = await this.contract.getTradeProof(tradeHash);
@@ -151,7 +145,7 @@ export class BlockchainService {
         lastTimestamp: stats[3].toString()
       };
     } catch (error) {
-      console.error('❌ Failed to get stats:', error);
+      console.error('Failed to get stats:', error);
       throw error;
     }
   }

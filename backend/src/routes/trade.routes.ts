@@ -6,15 +6,14 @@ import User from '../models/User.model';
 
 const router = Router();
 
-// Fix #5: wrap at module-level so a missing env var doesn't crash ALL routes
+// init blockchain service at startup so routes don't crash if env is missing
 let blockchainService: BlockchainService | null = null;
 try {
   blockchainService = new BlockchainService();
 } catch (err) {
-  console.error('⚠️  BlockchainService unavailable — blockchain features disabled:', err);
+  console.error('BlockchainService unavailable — blockchain features disabled:', err);
 }
 
-// Fix #10: validated symbol/side whitelists
 const VALID_SYMBOLS = new Set(['BTC/USD', 'ETH/USD', 'SOL/USD']);
 const VALID_SIDES   = new Set(['BUY', 'SELL']);
 
@@ -43,23 +42,23 @@ router.post('/verify', authenticate, async (req: Request, res: Response) => {
   try {
     const { symbol, price, quantity, side } = req.body;
     
-    // SECURITY FIX: Trust the token, not the body
+    // trust the JWT, not whatever the client sends in the body
     const { walletAddress, userId: tokenUserId } = (req as any).user || {};
     
     if (!walletAddress) {
       return res.status(401).json({ success: false, error: 'User must be authenticated' });
     }
     
-    // Prefer the real Mongo userId if available, else fallback to wallet address (legacy/compat)
+    // prefer mongo _id if we have it, else fallback to wallet address
     const userId = tokenUserId || walletAddress;
 
-    // Fix #10: validate all fields before touching DB or chain
+    // validate all fields before we do anything expensive
     const validationError = validateTrade(symbol, price, quantity, side);
     if (validationError) {
       return res.status(400).json({ success: false, error: validationError });
     }
 
-    // Fix #5: return 503 if blockchain is unavailable
+    // bail if blockchain isn't set up
     if (!blockchainService) {
       return res.status(503).json({
         success: false,
@@ -79,23 +78,23 @@ router.post('/verify', authenticate, async (req: Request, res: Response) => {
 
     const result = await blockchainService.verifyTrade(tradeData);
 
-    // Wallet ETH movement for ALL trades
-    // BUY:  User already sent ETH to treasury from the frontend MetaMask popup.
-    // SELL: Treasury sends ETH proceeds back to the user.
+    // ETH settlement:
+    // BUY  — user already sent ETH to treasury via MetaMask on the frontend
+    // SELL — we need to send ETH proceeds back to the user
     if (walletAddress) {
       if (side === 'BUY') {
         const clientEthPrice = Number(req.body.ethPrice) || 3000;
         const costInEth = (Number(quantity) * Number(price)) / clientEthPrice;
-        console.log(`📥 BUY recorded: user paid ~${costInEth.toFixed(6)} ETH for ${quantity} ${symbol}`);
+        console.log(`BUY recorded: user paid ~${costInEth.toFixed(6)} ETH for ${quantity} ${symbol}`);
       } else if (side === 'SELL') {
         const clientEthPrice = Number(req.body.ethPrice) || 3000;
         const proceedsInEth = (Number(quantity) * Number(price)) / clientEthPrice;
-        console.log(`💸 SELL: Sending ~${proceedsInEth.toFixed(6)} ETH to ${walletAddress}`);
+        console.log(`SELL: sending ~${proceedsInEth.toFixed(6)} ETH to ${walletAddress}`);
         try {
           const fundTxHash = await blockchainService!.fundWallet(walletAddress, proceedsInEth.toFixed(18));
-          console.log('✅ ETH proceeds sent:', fundTxHash);
+          console.log('ETH proceeds sent:', fundTxHash);
         } catch (fundErr) {
-          console.error('❌ Failed to send ETH proceeds:', fundErr);
+          console.error('Failed to send ETH proceeds:', fundErr);
         }
       }
     }
@@ -114,7 +113,7 @@ router.post('/verify', authenticate, async (req: Request, res: Response) => {
     });
 
     await newTrade.save();
-    console.log('💾 Trade saved to database');
+    console.log('Trade saved to DB');
 
     // Update user stats
     if (walletAddress) {
@@ -146,7 +145,7 @@ router.post('/verify', authenticate, async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('❌ Trade verification failed:', error);
+    console.error('Trade verification failed:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to verify trade'
@@ -181,7 +180,7 @@ router.get('/proof/:tradeHash', async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('❌ Failed to get trade proof:', error);
+    console.error('Failed to get trade proof:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to get trade proof'
@@ -272,7 +271,7 @@ router.get('/history/:userId', async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('❌ Failed to get trade history:', error);
+    console.error('Failed to get trade history:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to get trade history'
@@ -327,7 +326,7 @@ router.get('/wallet/:walletAddress', async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('❌ Failed to get wallet trades:', error);
+    console.error('Failed to get wallet trades:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to get wallet trades'
@@ -343,7 +342,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
     try {
       blockchainStats = await blockchainService.getStats();
     } catch (error) {
-      console.warn('⚠️ Could not fetch blockchain stats:', error);
+      console.warn('Could not fetch blockchain stats:', error);
       blockchainStats = { error: 'Blockchain stats unavailable' };
     }
     
@@ -377,7 +376,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error('❌ Failed to get stats:', error);
+    console.error('Failed to get stats:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to get statistics'
@@ -404,7 +403,7 @@ router.get('/:tradeId', async (req: Request, res: Response) => {
       data: trade
     });
   } catch (error: any) {
-    console.error('❌ Failed to get trade:', error);
+    console.error('Failed to get trade:', error);
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to get trade'

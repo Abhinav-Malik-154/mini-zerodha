@@ -43,9 +43,21 @@ export function WalletProvider({ children }: WalletProviderProps) {
 }
 
 function InnerWalletProvider({ children }: WalletProviderProps) {
-  const [address, setAddress] = useState('');
+  // Hydrate from localStorage so the UI doesn't flash "disconnected" on refresh
+  const [address, setAddress] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('user_address') || '';
+    return '';
+  });
   const [balance, setBalance] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return (
+        !localStorage.getItem('wallet_disconnected') &&
+        !!localStorage.getItem('user_address')
+      );
+    }
+    return false;
+  });
 
   const fetchBalance = useCallback(
     async (account: string) => {
@@ -138,32 +150,51 @@ function InnerWalletProvider({ children }: WalletProviderProps) {
   }, [address, fetchBalance]);
 
   useEffect(() => {
-    const eth = useEthereum();
-    if (!eth) return;
+    let cancelled = false;
 
-    const doAuto = () => {
+    const tryAutoConnect = (retriesLeft: number) => {
+      const eth = useEthereum();
+      if (!eth) {
+        // MetaMask might not be injected yet — retry up to 5 times
+        if (retriesLeft > 0 && !cancelled) {
+          setTimeout(() => tryAutoConnect(retriesLeft - 1), 300);
+        } else {
+          // No wallet found after retries — clear optimistic state
+          setIsConnected(false);
+          setAddress('');
+        }
+        return;
+      }
+
       const disconnected =
         typeof window !== 'undefined' &&
         localStorage.getItem('wallet_disconnected');
       if (disconnected) {
-        // user manually logged out; skip auto-connection
+        setIsConnected(false);
+        setAddress('');
         return;
       }
 
-      eth.request({ method: 'eth_accounts' }).then((accounts: any) => {
-        handleAccountsChanged(accounts as string[]);
-      });
+      eth
+        .request({ method: 'eth_accounts' })
+        .then((accounts: any) => {
+          if (!cancelled) handleAccountsChanged(accounts as string[]);
+        })
+        .catch(() => {
+          if (!cancelled) { setIsConnected(false); setAddress(''); }
+        });
+
+      eth.on('accountsChanged', handleAccountsChanged);
+      eth.on('chainChanged', () => window.location.reload());
     };
 
-    doAuto();
-
-    eth.on('accountsChanged', handleAccountsChanged);
-    eth.on('chainChanged', () => window.location.reload());
+    tryAutoConnect(5);
 
     return () => {
-      if (!eth.removeListener) return;
+      cancelled = true;
+      const eth = useEthereum();
+      if (!eth || !eth.removeListener) return;
       eth.removeListener('accountsChanged', handleAccountsChanged);
-      eth.removeListener('chainChanged', () => window.location.reload());
     };
   }, [handleAccountsChanged]);
 

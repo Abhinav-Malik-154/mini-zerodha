@@ -244,8 +244,8 @@ export default function SettingsPage() {
     developerMode: false,
     debugLogging: false,
     experimentalFeatures: false,
-    nodeUrl: 'https://rpc-amoy.polygon.technology',
-    wsUrl: 'wss://ws-amoy.polygon.technology',
+    nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc-amoy.polygon.technology',
+    wsUrl: process.env.NEXT_PUBLIC_WS_RPC_URL || 'wss://ws-amoy.polygon.technology',
     gasMultiplier: 1.1,
     maxConcurrentTrades: 5,
   });

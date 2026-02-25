@@ -4,20 +4,18 @@ import PriceTicker from '@/components/trading/PriceTicker';
 import OrderBook from '@/components/trading/OrderBook';
 import RecentTrades from '@/components/trading/RecentTrades';
 import DynamicTradingChart from '@/components/charts/DynamicTradingChart';
+import AIPrediction from '@/components/trading/AIPrediction';
+import MLPrediction from '@/components/trading/MLPrediction';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function TradePage() {
-  return (
-    <div className="space-y-6">
-      <PriceTicker />
+  const router = useRouter();
+  useEffect(() => {
+    // redirect legacy trading page to the new stock view
+    router.replace('/stocks/AAPL');
+  }, [router]);
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <DynamicTradingChart />
-        </div>
-        <OrderBook />
-      </div>
-
-      <RecentTrades />
-    </div>
-  );
+  return null;
 }

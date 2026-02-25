@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TradePro AI Trading Desk</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .subtitle {
+            color: rgba(255,255,255,0.9);
+            font-size: 1.2em;
+            margin-bottom: 30px;
+        }
+        .search-box {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .search-box input {
+            width: 70%;
+            padding: 15px;
+            font-size: 1.1em;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            margin-right: 10px;
+        }
+        .search-box button {
+            padding: 15px 30px;
+            font-size: 1.1em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .search-box button:hover {
+            transform: translateY(-2px);
+        }
+        .final-verdict {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .verdict-bullish { background: linear-gradient(135deg, #28a745, #20c997); }
+        .verdict-bearish { background: linear-gradient(135deg, #dc3545, #c82333); }
+        .verdict-neutral { background: linear-gradient(135deg, #ffc107, #fd7e14); }
+        
+        .final-verdict h2 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        .final-verdict .stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            font-size: 1.2em;
+        }
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .agent-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+            cursor: pointer;
+        }
+        .agent-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        .agent-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .agent-icon {
+            font-size: 2em;
+        }
+        .agent-name {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        .agent-direction {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .bullish { background: #d4edda; color: #155724; }
+        .bearish { background: #f8d7da; color: #721c24; }
+        .neutral { background: #fff3cd; color: #856404; }
+        .confidence-bar {
+            width: 100%;
+            height: 10px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .confidence-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.3s;
+        }
+        .bullish-fill { background: #28a745; }
+        .bearish-fill { background: #dc3545; }
+        .neutral-fill { background: #ffc107; }
+        .key-factors {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+        }
+        .factor-tag {
+            background: #f8f9fa;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            margin-right: 5px;
+            display: inline-block;
+            margin-bottom: 5px;
+        }
+        .debate-summary {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            white-space: pre-line;
+            font-family: monospace;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.5em;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 TradePro AI Trading Desk</h1>
+        <div class="subtitle">5 Specialized AI Agents Debate Every Stock</div>
+        
+        <div class="search-box">
+            <input type="text" id="ticker" placeholder="Enter stock symbol (e.g., AAPL, MSFT, GOOGL)" value="AAPL">
+            <button onclick="analyzeStock()">Analyze Stock</button>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">🤔 AI agents are debating... (5 seconds)</div>
+        
+        <div id="results" style="display: none;">
+            <div id="finalVerdict" class="final-verdict"></div>
+            <div id="agentsGrid" class="agents-grid"></div>
+            <div id="debateSummary" class="debate-summary"></div>
+        </div>
+    </div>
+
+    <script>
+        async function analyzeStock() {
+            const ticker = document.getElementById('ticker').value.toUpperCase();
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            
+            try {
+                const response = await fetch(`http://localhost:8000/agent/analyze/${ticker}`);
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    displayResults(data.data);
+                } else {
+                    alert('Error analyzing stock');
+                }
+            } catch (error) {
+                alert('Error connecting to AI server: ' + error);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function displayResults(data) {
+            const final = data.final_recommendation;
+            
+            // Final verdict
+            const verdictClass = final.direction === 'bullish' ? 'verdict-bullish' : 
+                                final.direction === 'bearish' ? 'verdict-bearish' : 'verdict-neutral';
+            
+            document.getElementById('finalVerdict').innerHTML = `
+                <h2>${final.direction.toUpperCase()} on ${data.ticker}</h2>
+                <div class="stats">
+                    <div>Confidence: ${final.confidence}%</div>
+                    <div>Action: ${final.suggested_action.toUpperCase()}</div>
+                    <div>Position: ${final.suggested_position_size}%</div>
+                </div>
+            `;
+            document.getElementById('finalVerdict').className = `final-verdict ${verdictClass}`;
+            
+            // Agent cards
+            let agentsHtml = '';
+            data.individual_opinions.forEach(agent => {
+                const dirClass = agent.direction === 'bullish' ? 'bullish' : 
+                                agent.direction === 'bearish' ? 'bearish' : 'neutral';
+                
+                agentsHtml += `
+                    <div class="agent-card" onclick="this.classList.toggle('expanded')">
+                        <div class="agent-header">
+                            <span class="agent-icon">${getAgentIcon(agent.agent_name)}</span>
+                            <span class="agent-name">${agent.agent_name}</span>
+                        </div>
+                        <div>
+                            <span class="agent-direction ${dirClass}">${agent.direction.toUpperCase()} ${agent.confidence}%</span>
+                        </div>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill ${dirClass}-fill" style="width: ${agent.confidence}%"></div>
+                        </div>
+                        <div class="key-factors">
+                            ${agent.key_factors.map(f => `<span class="factor-tag">${f}</span>`).join('')}
+                        </div>
+                        <div style="margin-top: 10px; color: #666; font-size: 0.9em; display: none;" class="reasoning">
+                            ${agent.reasoning}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('agentsGrid').innerHTML = agentsHtml;
+            
+            // Debate summary
+            document.getElementById('debateSummary').innerHTML = `
+                <strong>💬 Debate Summary:</strong>\n${data.debate_summary}
+            `;
+            
+            document.getElementById('results').style.display = 'block';
+        }
+        
+        function getAgentIcon(name) {
+            if (name.includes('Sentiment')) return '📊';
+            if (name.includes('Fundamental')) return '📈';
+            if (name.includes('Technical')) return '📉';
+            if (name.includes('Macro')) return '🌍';
+            if (name.includes('Risk')) return '🛡️';
+            return '🤖';
+        }
+    </script>
+</body>
+</html>

@@ -18,7 +18,7 @@ import { usePathname } from 'next/navigation';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: ChartBarIcon },
-  { name: 'Trading', href: '/trade', icon: ArrowTrendingUpIcon },
+  { name: 'Stocks', href: '/stocks/AAPL', icon: ArrowTrendingUpIcon },
   { name: 'Portfolio', href: '/portfolio', icon: WalletIcon },
   { name: 'Markets', href: '/markets', icon: CurrencyDollarIcon },
 ];

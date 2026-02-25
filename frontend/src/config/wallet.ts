@@ -15,7 +15,7 @@ export const metadata = {
   name: 'Mini-Zerodha',
   description: 'Hybrid Trading Platform with Blockchain Verification',
   url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-  icons: ['https://avatars.githubusercontent.com/u/37784886']
+  icons: [process.env.NEXT_PUBLIC_APP_ICON_URL || 'https://avatars.githubusercontent.com/u/37784886']
 };
 
 // Configure chains

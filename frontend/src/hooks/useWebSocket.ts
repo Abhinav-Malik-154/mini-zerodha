@@ -150,7 +150,7 @@ export const useWebSocket = () => {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const socket = io('http://localhost:5000');
+    const socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000');
 
     socket.on('connect', () => {
       setIsConnected(true);

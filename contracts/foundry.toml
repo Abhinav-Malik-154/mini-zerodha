@@ -12,4 +12,10 @@ remappings = [
     "forge-std/=lib/forge-std/src/"
 ]
 
+[rpc_endpoints]
+polygon_amoy = "${POLYGON_AMOY_RPC_URL}"
+
+[etherscan]
+polygon_amoy = { key = "${POLYGONSCAN_API_KEY}", url = "https://api-amoy.polygonscan.com/api" }
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

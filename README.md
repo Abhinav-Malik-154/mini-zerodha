@@ -103,6 +103,9 @@ Users connect their MetaMask wallet, authenticate via signature-based login (no 
 - **Recent trades** feed
 - **Platform stats** — total volume, active trades, users
 
+### AI/Stock Prediction
+- **Dynamic prediction page** serves both crypto and equities using a LightGBM model + multi-agent analysis. Visit `/stocks/[symbol]` (e.g. `/stocks/AAPL`) after starting the ML backend to see charts, price history and recommendations. The previous `trade` page redirects to this view.
+
 ---
 
 ## Tech Stack
